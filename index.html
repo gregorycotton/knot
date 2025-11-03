@@ -70,8 +70,7 @@
 <body>
 
     <div id="chat-container">
-        <div id="chat-log">
-            </div>
+        <div id="chat-log"></div>
         <form id="chat-form">
             <input type="text" id="chat-input" placeholder="Ask 'knot'..." autocomplete="off">
             <button id="send-button" type="submit">Send</button>
@@ -84,21 +83,19 @@
         const chatInput = document.getElementById('chat-input');
 
         chatForm.addEventListener('submit', async (event) => {
-            event.preventDefault();
-
+            event.preventDefault(); 
             const userMessage = chatInput.value.trim();
-            if (!userMessage) return;
+            if (!userMessage) return; 
 
             addMessage(userMessage, 'user');
-
             chatInput.value = '';
+
+            const assistantMessageElement = addMessage('Thinking...', 'assistant');
 
             try {
                 const response = await fetch('http://localhost:5001/api/chat', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: userMessage }),
                 });
 
@@ -106,25 +103,37 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
-                const data = await response.json();
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullResponse = ""; 
 
-                addMessage(data.response, 'assistant');
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break; 
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    fullResponse += chunk;
+
+                    assistantMessageElement.innerText = fullResponse; 
+                    
+                    chatLog.scrollTop = chatLog.scrollHeight;
+                }
 
             } catch (error) {
-                console.error('Error fetching response:', error);
-                addMessage('Error: Could not get a response from the server.', 'assistant');
+                console.error('Error fetching stream:', error);
+                assistantMessageElement.innerText = "Error: Could not get a response.";
             }
         });
 
         function addMessage(text, sender) {
             const messageElement = document.createElement('div');
             messageElement.classList.add('message', sender);
-            
+
             messageElement.innerText = text;
 
             chatLog.appendChild(messageElement);
-            
             chatLog.scrollTop = chatLog.scrollHeight;
+            return messageElement; 
         }
     </script>
 
