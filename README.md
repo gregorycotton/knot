@@ -1,6 +1,7 @@
 # 🪢 Knot
 Web app for chatting with local language models. 
 
+
 **Features:**
 * Chat history stored in SQLite DB
 * More... eventually (surely, right)
