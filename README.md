@@ -3,7 +3,7 @@ Web app for chatting with local language models.
 
 ### Features:
 * Chat history stored in SQLite DB
-* More... eventually (surely, right)
+* More... eventually (surely, right???)
 
 ### Stack:
 * Python 3, Flask
