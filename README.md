@@ -1,5 +1,5 @@
 # 🪢 Knot
-Standalone LLM chat for the terminal. Knot uses `llama.cpp` and runs the LLM directly inside the Python process and handles model management, persistent history, and context injection automatically.
+Standalone LLM chat for the terminal. Knot uses `llama.cpp`, runs the LLM directly inside the Python process and handles model management, persistent history, and context injection automatically.
 
 <br>
 
