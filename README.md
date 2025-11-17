@@ -1,6 +1,8 @@
 # 🪢 Knot
 Standalone LLM chat for the terminal. Knot uses `llama.cpp` and runs the LLM directly inside the Python process and handles model management, persistent history, and context injection automatically.
 
+<br>
+
 ## Features
 * Persistent memory: All convos automatically saved to a SQLite DB,
 * Currently optimized for Apple Silicon (M1/M2/M3) with Metal GPU acceleration,
@@ -8,10 +10,18 @@ Standalone LLM chat for the terminal. Knot uses `llama.cpp` and runs the LLM dir
 * Load local .md files into chat context **(WIP)**,
 * Generate and download summaries of a given conversation,
 
+<br>
+
 ## Details
-* Engine: [Llama-cpp-python][https://github.com/abetlen/llama-cpp-python] (python bindings for llama.cpp),
-* UI: [Rich][https://github.com/Textualize/rich] and [Prompt Toolkit][https://github.com/prompt-toolkit/python-prompt-toolkit],
+* Engine: [Llama-cpp-python][llama-cpp-python] (python bindings for llama.cpp),
+* UI: [Rich][rich] and [Prompt Toolkit][prompt-toolkit],
 * SQLite DB
+
+[llama-cpp-python]: https://github.com/abetlen/llama-cpp-python
+[rich]: https://github.com/Textualize/rich
+[prompt-toolkit]: https://github.com/prompt-toolkit/python-prompt-toolkit
+
+<br>
 
 ## Installation
 Note: currently is optimized for Apple Silicon.
