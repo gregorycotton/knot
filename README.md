@@ -43,7 +43,7 @@ source knot/bin/activate
 
 <br>
 
-#### 2. Install engine with Metal support\
+#### 2. Install engine with Metal support
 **Note**: This won't work if you just run `pip install llama-cpp-python`: it must be compiled with Metal support in order to use Mac GPU:
 ```bash
 CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python
