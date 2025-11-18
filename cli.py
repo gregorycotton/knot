@@ -129,18 +129,15 @@ def boot_model():
         console.print(f"[bold red]Failed to load model: {e}[/bold red]")
         sys.exit(1)
 
-# Title gen
 def generate_smart_title(first_message):
     """Uses the LLM to generate a short title based on the user's first message."""
     try:
         prompt = f"Generate a concise title (3-6 words) for this text: '{first_message}'. Return ONLY the title, no quotes."
-        prompt = f"Generate a concise title (3-6 words) for this text: '{first_message}'. Return ONLY the title, no quotes."
         
         response = state.llm.create_chat_completion(
             messages=[{"role": "user", "content": prompt}],
-            messages=[{"role": "user", "content": prompt}],
             max_tokens=20, 
-            temperature=0.1 # Lower temp for more predictable results
+            temperature=0.1
         )
         
         title = response['choices'][0]['message']['content'].strip().strip('"')
@@ -152,7 +149,6 @@ def generate_smart_title(first_message):
 def stream_llm_response(user_input):
     
     if state.convo_id is None:
-        # A. Generate Title and create convo in DB
         with console.status("[bold yellow]Generating title...[/bold yellow]"):
             new_title = generate_smart_title(user_input)
         
@@ -164,13 +160,7 @@ def stream_llm_response(user_input):
     history = get_history(state.conn, state.convo_id)
     
     # Hard inject context into message
-    # Hard inject context into message
     if state.context_content:
-        last_msg = history[-1]
-        
-        injected_content = f"Use the following context to answer the question:\n\n---\n{state.context_content}\n---\n\nUser Question: {last_msg['content']}"
-        
-        history[-1]['content'] = injected_content
         last_msg = history[-1]
         
         injected_content = f"Use the following context to answer the question:\n\n---\n{state.context_content}\n---\n\nUser Question: {last_msg['content']}"
