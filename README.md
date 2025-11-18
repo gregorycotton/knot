@@ -24,9 +24,13 @@ Standalone LLM chat for the terminal. Knot uses `llama.cpp`, runs the LLM direct
 <br>
 
 ## Installation
-Note: currently is optimized for Apple Silicon.
+To get started follow the below.
+**Note**: currently is optimized for Apple Silicon.
 
-1. Clone & prepare
+<br>
+
+#### 1. Clone & prepare
+Clone the repository and create your virtual environment:
 ```bash
 # Create the project folder
 mkdir knot
@@ -37,22 +41,31 @@ python3 -m venv knot
 source knot/bin/activate
 ```
 
-2. Install engine with Metal support\
-**Note**: You **cannot** run `pip install llama-cpp-python`: this must be compiled with Metal support in order to use Mac GPU.
+<br>
+
+#### 2. Install engine with Metal support\
+**Note**: This won't work if you just run `pip install llama-cpp-python`: it must be compiled with Metal support in order to use Mac GPU:
 ```bash
 CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python
 ```
 
-3. Install dependancies
-UI and utility libs need installation still.
+<br>
+
+#### 3. Install dependancies
+UI and utility libs need installation still:
 ```bash
 pip install rich prompt_toolkit huggingface_hub
 ```
 
-4. Use the thing
+<br>
+
+#### 4. Use the thing
+WIP still so lots for me to fix but can be played around with now:
 ```bash
 python3 cli_embedded.py
 ```
+
+<br>
 
 ## Comand reference
 Type normally to chat or start a line with `:` to enter a command (vim style).
