@@ -37,8 +37,8 @@ python3 -m venv knot
 source knot/bin/activate
 ```
 
-2. Install engine with Metal support
-Note: You **cannot** run `pip install llama-cpp-python`: this must be compiled with Metal support in order to use Mac GPU.
+2. Install engine with Metal support\
+**Note**: You **cannot** run `pip install llama-cpp-python`: this must be compiled with Metal support in order to use Mac GPU.
 ```bash
 CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python
 ```
