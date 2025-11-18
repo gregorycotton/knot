@@ -4,10 +4,10 @@ Standalone LLM chat for the terminal. Knot uses `llama.cpp`, runs the LLM direct
 <br>
 
 ## Features
-* Persistent memory: All convos automatically saved to a SQLite DB,
+* Convos automatically saved to a SQLite DB,
 * Currently optimized for Apple Silicon (M1/M2/M3) with Metal GPU acceleration,
 * Markdown rendering, tables, syntax highlighting, etc.,
-* Load local .md files into chat context **(WIP – not working right now)**,
+* Load local .md files into chat context,
 * Generate and download summaries of a given conversation,
 
 <br>
@@ -40,6 +40,7 @@ cd knot
 python3 -m venv knot
 source knot/bin/activate
 ```
+**Note**: You will also need to set up a SQLite DB in a folder titled `convo` in your project root as I don't yet have the DB being automatically created.
 
 <br>
 
