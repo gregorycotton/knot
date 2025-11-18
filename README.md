@@ -7,7 +7,7 @@ Standalone LLM chat for the terminal. Knot uses `llama.cpp`, runs the LLM direct
 * Persistent memory: All convos automatically saved to a SQLite DB,
 * Currently optimized for Apple Silicon (M1/M2/M3) with Metal GPU acceleration,
 * Markdown rendering, tables, syntax highlighting, etc.,
-* Load local .md files into chat context **(WIP)**,
+* Load local .md files into chat context **(WIP – not working right now)**,
 * Generate and download summaries of a given conversation,
 
 <br>
