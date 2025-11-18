@@ -130,19 +130,16 @@ def boot_model():
         console.print(f"[bold red]Failed to load model: {e}[/bold red]")
         sys.exit(1)
 
-# Auto-Title Generator
+# Title gen
 def generate_smart_title(first_message):
     """Uses the LLM to generate a short title based on the user's first message."""
     try:
-        prompt_messages = [
-            {"role": "system", "content": "You are a summarization tool. Generate a concise title (3-6 words) for the following user query. Do not use quotes. Return ONLY the title."},
-            {"role": "user", "content": first_message}
-        ]
+        prompt = f"Generate a concise title (3-6 words) for this text: '{first_message}'. Return ONLY the title, no quotes."
         
         response = state.llm.create_chat_completion(
-            messages=prompt_messages,
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=20, 
-            temperature=0.5
+            temperature=0.1 # Lower temp for more predictable results
         )
         
         title = response['choices'][0]['message']['content'].strip().strip('"')
@@ -154,7 +151,7 @@ def generate_smart_title(first_message):
 def stream_llm_response(user_input):
     
     if state.convo_id is None:
-        # Generate title, create convo in DB
+        # A. Generate Title and create convo in DB
         with console.status("[bold yellow]Generating title...[/bold yellow]"):
             new_title = generate_smart_title(user_input)
         
@@ -165,9 +162,13 @@ def stream_llm_response(user_input):
     save_message(state.conn, state.convo_id, "user", user_input)
     history = get_history(state.conn, state.convo_id)
     
+    # Hard inject context into message
     if state.context_content:
-        system_prompt = f"Context from file '{state.context_filename}':\n{state.context_content}"
-        history.insert(0, {"role": "system", "content": system_prompt})
+        last_msg = history[-1]
+        
+        injected_content = f"Use the following context to answer the question:\n\n---\n{state.context_content}\n---\n\nUser Question: {last_msg['content']}"
+        
+        history[-1]['content'] = injected_content
 
     full_response = ""
     console.print(f"\n[bold magenta]KNOT ({state.context_filename or 'No Context'}):[/bold magenta]")
@@ -238,7 +239,6 @@ def handle_load(args):
         console.print(f"[red]Error reading file: {e}[/red]")
 
 def handle_summary():
-    # Check if convo exists first
     if state.convo_id is None:
         console.print("[red]No active conversation to summarize.[/red]")
         return
