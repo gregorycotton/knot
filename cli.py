@@ -130,7 +130,6 @@ def boot_model():
         sys.exit(1)
 
 # Title gen
-# Title gen
 def generate_smart_title(first_message):
     """Uses the LLM to generate a short title based on the user's first message."""
     try:
