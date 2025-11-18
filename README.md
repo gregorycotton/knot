@@ -63,7 +63,7 @@ pip install rich prompt_toolkit huggingface_hub
 #### 4. Use the thing
 WIP still so lots for me to fix but can be played around with now:
 ```bash
-python3 cli_embedded.py
+python3 cli.py
 ```
 **Note**: I've created a custom command (see: `knot.sh`) by adding an alias to my terminal config file so that I can run `knot` from anywhere in my terminal which automatically activates the virtual environment and launches the application.
 
