@@ -4,10 +4,10 @@ Standalone LLM chat for the terminal. Knot uses `llama.cpp`, runs the LLM direct
 <br>
 
 ## Features
-* Persistent memory: All convos automatically saved to a SQLite DB,
+* Convos automatically saved to a SQLite DB,
 * Currently optimized for Apple Silicon (M1/M2/M3) with Metal GPU acceleration,
 * Markdown rendering, tables, syntax highlighting, etc.,
-* Load local .md files into chat context **(WIP)**,
+* Load local .md files into chat context,
 * Generate and download summaries of a given conversation,
 
 <br>
@@ -40,6 +40,7 @@ cd knot
 python3 -m venv knot
 source knot/bin/activate
 ```
+**Note**: If you don't have it already, this will create a folder titled `convo` in your project root as well as a SQLite DB in the folder for your conversation history.
 
 <br>
 
@@ -62,8 +63,9 @@ pip install rich prompt_toolkit huggingface_hub
 #### 4. Use the thing
 WIP still so lots for me to fix but can be played around with now:
 ```bash
-python3 cli_embedded.py
+python3 cli.py
 ```
+**Note**: I've created a custom command (see: `knot.sh`) by adding an alias to my terminal config file so that I can run `knot` from anywhere in my terminal which automatically activates the virtual environment and launches the application.
 
 <br>
 

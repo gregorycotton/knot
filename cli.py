@@ -73,13 +73,12 @@ def list_conversations(conn):
 class AppState:
     def __init__(self):
         self.conn = init_db()
-        self.convo_id = None # None means "Unsaved/New"
+        self.convo_id = None
         self.context_content = ""
         self.context_filename = ""
         self.llm = None
 
     def start_new_chat(self):
-        # We DO NOT create a DB entry yet. We wait for the first message.
         self.convo_id = None
         console.print(Panel("[bold green]Ready. (Conversation will be saved on first message)[/bold green]", border_style="green"))
 
@@ -131,12 +130,15 @@ def boot_model():
         sys.exit(1)
 
 # Title gen
+# Title gen
 def generate_smart_title(first_message):
     """Uses the LLM to generate a short title based on the user's first message."""
     try:
         prompt = f"Generate a concise title (3-6 words) for this text: '{first_message}'. Return ONLY the title, no quotes."
+        prompt = f"Generate a concise title (3-6 words) for this text: '{first_message}'. Return ONLY the title, no quotes."
         
         response = state.llm.create_chat_completion(
+            messages=[{"role": "user", "content": prompt}],
             messages=[{"role": "user", "content": prompt}],
             max_tokens=20, 
             temperature=0.1 # Lower temp for more predictable results
@@ -163,7 +165,13 @@ def stream_llm_response(user_input):
     history = get_history(state.conn, state.convo_id)
     
     # Hard inject context into message
+    # Hard inject context into message
     if state.context_content:
+        last_msg = history[-1]
+        
+        injected_content = f"Use the following context to answer the question:\n\n---\n{state.context_content}\n---\n\nUser Question: {last_msg['content']}"
+        
+        history[-1]['content'] = injected_content
         last_msg = history[-1]
         
         injected_content = f"Use the following context to answer the question:\n\n---\n{state.context_content}\n---\n\nUser Question: {last_msg['content']}"
@@ -212,7 +220,7 @@ def handle_history():
 
 def handle_open(args):
     if not args:
-        console.print("[red]Usage: :open <id_fragment>[/red]")
+        console.print("red]Usage: :open <id_fragment>[/red]")
         return
     target = args[0]
     convos = list_conversations(state.conn)
