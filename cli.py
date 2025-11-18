@@ -51,7 +51,7 @@ def init_db():
     conn.commit()
     return conn
 
-def create_conversation(conn, title="New Conversation"):
+def create_conversation(conn, title):
     convo_id = str(uuid.uuid4())
     conn.execute("INSERT INTO conversations (id, title) VALUES (?, ?)", (convo_id, title))
     conn.commit()
@@ -73,14 +73,15 @@ def list_conversations(conn):
 class AppState:
     def __init__(self):
         self.conn = init_db()
-        self.convo_id = None
+        self.convo_id = None # None means "Unsaved/New"
         self.context_content = ""
         self.context_filename = ""
         self.llm = None
 
     def start_new_chat(self):
-        self.convo_id = create_conversation(self.conn)
-        console.print(Panel("[bold green]Started new conversation.[/bold green]", border_style="green"))
+        # We DO NOT create a DB entry yet. We wait for the first message.
+        self.convo_id = None
+        console.print(Panel("[bold green]Ready. (Conversation will be saved on first message)[/bold green]", border_style="green"))
 
     def set_active_convo(self, convo_id, title):
         self.convo_id = convo_id
@@ -129,8 +130,38 @@ def boot_model():
         console.print(f"[bold red]Failed to load model: {e}[/bold red]")
         sys.exit(1)
 
+# Auto-Title Generator
+def generate_smart_title(first_message):
+    """Uses the LLM to generate a short title based on the user's first message."""
+    try:
+        prompt_messages = [
+            {"role": "system", "content": "You are a summarization tool. Generate a concise title (3-6 words) for the following user query. Do not use quotes. Return ONLY the title."},
+            {"role": "user", "content": first_message}
+        ]
+        
+        response = state.llm.create_chat_completion(
+            messages=prompt_messages,
+            max_tokens=20, 
+            temperature=0.5
+        )
+        
+        title = response['choices'][0]['message']['content'].strip().strip('"')
+        return title
+    except Exception:
+        return "New Conversation"
+
 # Embedded chat logic
 def stream_llm_response(user_input):
+    
+    if state.convo_id is None:
+        # Generate title, create convo in DB
+        with console.status("[bold yellow]Generating title...[/bold yellow]"):
+            new_title = generate_smart_title(user_input)
+        
+        state.convo_id = create_conversation(state.conn, new_title)
+        
+        console.print(f"[dim]Conversation saved as: {new_title}[/dim]")
+
     save_message(state.conn, state.convo_id, "user", user_input)
     history = get_history(state.conn, state.convo_id)
     
@@ -207,6 +238,11 @@ def handle_load(args):
         console.print(f"[red]Error reading file: {e}[/red]")
 
 def handle_summary():
+    # Check if convo exists first
+    if state.convo_id is None:
+        console.print("[red]No active conversation to summarize.[/red]")
+        return
+
     console.print("[yellow]Generating summary...[/yellow]")
     history = get_history(state.conn, state.convo_id)
     history.append({"role": "user", "content": "Summarize this entire conversation into a concise markdown note."})
