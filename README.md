@@ -40,7 +40,7 @@ cd knot
 python3 -m venv knot
 source knot/bin/activate
 ```
-**Note**: You will also need to set up a SQLite DB in a folder titled `convo` in your project root as I don't yet have the DB being automatically created.
+**Note**: If you don't have it already, this will create a folder titled `convo` in your project root as well as a SQLite DB in the folder for your conversation history.
 
 <br>
 
