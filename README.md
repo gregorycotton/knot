@@ -65,7 +65,16 @@ WIP still so lots for me to fix but can be played around with now:
 ```bash
 python3 cli.py
 ```
-**Note**: I've created a custom command (see: `knot.sh`) by adding an alias to my terminal config file so that I can run `knot` from anywhere in my terminal which automatically activates the virtual environment and launches the application.
+**Note**: I've created a custom command by adding an alias to my terminal config file so that I can run `knot` from anywhere in my terminal which automatically activates the virtual environment and launches the application. Something like this can be done with a shell file like the below:
+```bash
+#!/bin/bash
+
+cd /Users/{YOUR PATH TO THE PROJECT FOLDER}/App/knot || exit
+
+source {YOUR VENV NAME}/bin/activate || exit
+
+python3 cli.py
+```
 
 <br>
 
