@@ -28,6 +28,7 @@ Standalone LLM chat for the terminal. Knot uses `llama.cpp`, runs the LLM direct
 
 ## Installation
 To get started follow the below.
+
 **Note**: currently is optimized for Apple Silicon.
 
 <br>
@@ -104,4 +105,6 @@ Type normally to chat or start a line with `:` to enter a command (vim style).
 * Explore possibility of web search and/or search over local documents,
 * For now need to handle how GPT OSS "thinks" visually, especially with regard to generating titles for new convos.
 
-**Longer-term**: When you change the active model today you need to restart to apply the change. This is a consequence of running the model directly inside the python process (lazy and simple way to get started with this). In the future I'd like to run `llama-cpp-python` as a separate persistent HTTP service rather than as an embedded library to make this smoother. This will also allow for models dedicated to specific tasks (eg. for generating conversation titles or summaries, etc.)... I didn't expect to build this out as much as I did so made a poor initial design decision I'll need to amend. This change will be made whenever I get sick of restarting Knot everytime I want to swap models.
+<br>
+
+**Longer-term**: In the future will make a change, architecturally. When you change the active model today you need to restart to apply the change. This is a consequence of running the model directly inside the python process (lazy and simple way to get started with this). In the future I'd like to run `llama-cpp-python` as a separate persistent HTTP service rather than as an embedded library to make this smoother. This will also allow for models dedicated to specific tasks (eg. for generating conversation titles or summaries, etc.).
