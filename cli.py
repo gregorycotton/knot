@@ -23,10 +23,6 @@ from prompt_toolkit.history import InMemoryHistory
 DB_FILE = "convo/history.db"
 MODEL_DIR = "./models"
 
-# Current model to test is Phi-3 Mini
-REPO_ID = "microsoft/Phi-3-mini-4k-instruct-gguf"
-FILENAME = "Phi-3-mini-4k-instruct-q4.gguf"
-
 console = Console()
 
 # DB logic
@@ -40,6 +36,7 @@ def init_db():
             title TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+                       
         CREATE TABLE IF NOT EXISTS messages (
             id TEXT PRIMARY KEY,
             conversation_id TEXT NOT NULL,
@@ -49,7 +46,15 @@ def init_db():
             FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
         );
         
-        -- FIX: Only index message content, not title (which lives in conversations table)
+        CREATE TABLE IF NOT EXISTS models (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            short_name TEXT UNIQUE NOT NULL,
+            repo_id TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            context_window INTEGER NOT NULL,
+            is_active INTEGER DEFAULT 0
+        );
+        
         CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
             content, 
             conversation_id UNINDEXED, 
@@ -57,7 +62,6 @@ def init_db():
             content_rowid='rowid'
         );
                        
-        -- Updated trigger to match new schema
         CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
             INSERT INTO messages_fts(rowid, content, conversation_id) VALUES (
                 new.rowid, 
@@ -65,10 +69,30 @@ def init_db():
                 new.conversation_id
             );
         END;
-    """)
+    """);
+    
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM models")
+    if cursor.fetchone()[0] == 0:
+        # Phi-3 Mini
+        cursor.execute("""
+            INSERT INTO models (short_name, repo_id, filename, context_window, is_active) VALUES 
+            (?, ?, ?, ?, 1)
+            """, 
+            ('phi3', 'microsoft/Phi-3-mini-4k-instruct-gguf', 'Phi-3-mini-4k-instruct-q4.gguf', 4096)
+        )
+        # OpenAI GPT-OSS 20B
+        cursor.execute("""
+            INSERT INTO models (short_name, repo_id, filename, context_window, is_active) VALUES 
+            (?, ?, ?, ?, 0)
+            """, 
+            ('gpt-oss', 'bartowski/openai_gpt-oss-20b-GGUF', 'openai_gpt-oss-20b-Q4_K_M.gguf', 8192)
+        )
+    
     conn.commit()
     return conn
 
+# DB helpers
 def create_conversation(conn, title):
     convo_id = str(uuid.uuid4())
     conn.execute("INSERT INTO conversations (id, title) VALUES (?, ?)", (convo_id, title))
@@ -86,6 +110,18 @@ def get_history(conn, convo_id):
 
 def list_conversations(conn):
     return conn.execute("SELECT id, title, created_at FROM conversations ORDER BY created_at DESC").fetchall()
+
+def get_active_model_config(conn):
+    """Retrieves the model marked as active (is_active = 1)."""
+    return conn.execute("SELECT * FROM models WHERE is_active = 1").fetchone()
+
+def update_active_model(conn, model_id):
+    """
+    Set a new model as active by ID and deactivates the others.
+    """
+    conn.execute("UPDATE models SET is_active = 0")
+    conn.execute("UPDATE models SET is_active = 1 WHERE id = ?", (model_id,))
+    conn.commit()
 
 # App state
 class AppState:
@@ -113,42 +149,54 @@ state = AppState()
 
 # Model management
 def boot_model():
-    """Checks if the model exists locally. If not, downloads it. Then loads it into RAM."""
+    """
+    Check DB for the active model, ensure the file is local, load it.
+    """
+    
+    conn = state.conn
+    config = get_active_model_config(conn)
+
+    if not config:
+        console.print("[bold red]FATAL: No active model found. Run :model list and :model select.[/bold red]")
+        sys.exit(1)
+        
+    REPO_ID = config['repo_id']
+    FILENAME = config['filename']
+    CONTEXT_WINDOW = config['context_window']
+    MODEL_NAME = config['short_name']
+
     os.makedirs(MODEL_DIR, exist_ok=True)
     model_path = os.path.join(MODEL_DIR, FILENAME)
 
     if not os.path.exists(model_path):
-        console.print(f"[bold yellow]Model file not found at {model_path}[/bold yellow]")
-        console.print(f"Downloading {REPO_ID} from Hugging Face... (This happens once)")
+        console.print(f"[bold yellow]Model file not found: {FILENAME}[/bold yellow]")
+        console.print(f"Downloading {MODEL_NAME.upper()} from Hugging Face (This happens once)...")
         try:
-            model_path = hf_hub_download(
-                repo_id=REPO_ID, 
-                filename=FILENAME, 
-                local_dir=MODEL_DIR,
-                local_dir_use_symlinks=False
-            )
+            model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, local_dir=MODEL_DIR, local_dir_use_symlinks=False)
             console.print("[bold green]Download complete![/bold green]")
         except Exception as e:
             console.print(f"[bold red]Error downloading model: {e}[/bold red]")
             sys.exit(1)
 
-    console.print(f"[cyan]Loading model into Metal (GPU)...[/cyan]")
+    console.print(f"[cyan]Loading {MODEL_NAME.upper()} into Metal (CTX={CONTEXT_WINDOW})...[/cyan]")
     
-    # Initialize engine directly
     try:
         state.llm = Llama(
             model_path=model_path,
-            n_gpu_layers=-1, # Offload all layers to Mac GPU for speed
-            n_ctx=4096, # Context window size
+            n_gpu_layers=-1, 
+            n_ctx=CONTEXT_WINDOW,
             verbose=False
         )
-        console.print("[bold green]Engine Ready.[/bold green]")
+        console.print(f"[bold green]Engine Ready. Active Model: {MODEL_NAME.upper()} (Context: {CONTEXT_WINDOW})[/bold green]")
     except Exception as e:
         console.print(f"[bold red]Failed to load model: {e}[/bold red]")
         sys.exit(1)
 
+
 def generate_smart_title(first_message):
-    """Uses the LLM to generate a short title based on the user's first message."""
+    """
+    Use the LLM to generate short title based on your first message.
+    """
     try:
         prompt = f"Generate a succinct, 3-6 word title for this text: '{first_message}'. Return ONLY the title text."
         
@@ -171,7 +219,6 @@ def generate_smart_title(first_message):
 
 # Embedded chat logic
 def stream_llm_response(user_input):
-    
     if state.convo_id is None:
         with console.status("[bold yellow]Generating title...[/bold yellow]"):
             new_title = generate_smart_title(user_input)
@@ -218,6 +265,9 @@ def stream_llm_response(user_input):
 
 # Commands
 def handle_history():
+    """
+    Display conversation history.
+    """
     convos = list_conversations(state.conn)
     if not convos:
         console.print("[yellow]No conversation history found.[/yellow]")
@@ -232,6 +282,9 @@ def handle_history():
     console.print("[italic]To select, type: :open <first-8-chars-of-id>[/italic]")
 
 def handle_open(args):
+    """
+    Open a conversation based on ID or partial ID.
+    """
     if not args:
         console.print("[red]Usage: :open <id_fragment>[/red]")
         return
@@ -244,6 +297,9 @@ def handle_open(args):
     console.print(f"[red]Conversation starting with {target} not found.[/red]")
 
 def handle_load(args):
+    """
+    Load a local .md file into the conversation context.
+    """
     if not args:
         console.print("[red]Usage: :load <path/to/file.md>[/red]")
         return
@@ -260,6 +316,9 @@ def handle_load(args):
         console.print(f"[red]Error reading file: {e}[/red]")
 
 def handle_summary():
+    """
+    Summarize the current conversation and save to the downloads folder in .md format.
+    """
     if state.convo_id is None:
         console.print("[red]No active conversation to summarize.[/red]")
         return
@@ -286,11 +345,9 @@ def handle_summary():
     except Exception as e:
         console.print(f"[red]Error saving file: {e}[/red]")
 
-# Command Handlers
 def handle_search(args):
     """
-    Searches history, groups results by conversation, and displays an 
-    Occurrences count. (Sample content removed for clean output).
+    Search history, group results by conversation, displays a count of occurances.
     """
     if not args:
         console.print("[red]Usage: :search <keyword or phrase>[/red]")
@@ -309,7 +366,6 @@ def handle_search(args):
                 c.title AS title,
                 COUNT(mfts.conversation_id) AS occurrences
             FROM messages_fts mfts
-            JOIN messages m ON m.rowid = mfts.rowid
             JOIN conversations c ON c.id = mfts.conversation_id
             WHERE mfts.content MATCH ?
             GROUP BY mfts.conversation_id
@@ -329,19 +385,22 @@ def handle_search(args):
 
         for row in search_results:
             table.add_row(
-                row['convo_id'][:8], # Truncated ID
+                row['convo_id'][:8], 
                 row['title'],
                 str(row['occurrences']),
             )
             unique_convo_ids.add(row['convo_id'])
             
         console.print(table)
-        console.print(f"[italic]Found {len(unique_convo_ids)} conversation(s) matching the criteria.[/italic]")
+        console.print(f"[italic]Found {len(unique_convo_ids)} conversation(s).[/italic]")
 
     except sqlite3.Error as e:
         console.print(f"[bold red]Database Search Error: {e}[/bold red]")
 
 def handle_help():
+    """
+    Help menu with descriptions of possible actions.
+    """
     help_text = """
     [bold]Commands:[/bold]
     :new            - Start a new conversation
@@ -350,11 +409,60 @@ def handle_help():
     :load <file>    - Load a text/md file as context
     :summary        - Save a summary of this chat to Downloads
     :search <term>  - Search conversations (* at end for partial matches)
-    :quit           - Exit the app
+    :model <cmd>    - Manage active and downloaded models (add, select, list)
+    :quit           - Exit Knot
     """
     console.print(Panel(help_text, title="Help", border_style="white"))
 
-# Main
+def handle_model(args):
+    """
+    Manages models: list, select, add (WIP).
+    """
+    if not args:
+        console.print("[red]Usage: :model <list | select <ID>>[/red]")
+        return
+    
+    command = args[0].lower()
+    conn = state.conn
+
+    if command == 'list':
+        models = conn.execute("SELECT id, short_name, repo_id, context_window, is_active FROM models").fetchall()
+        
+        table = Table(title="Available Models")
+        table.add_column("ID", style="cyan", no_wrap=True)
+        table.add_column("Name", style="yellow")
+        table.add_column("Context (n_ctx)", style="magenta")
+        table.add_column("Status", style="green")
+
+        for m in models:
+            status = "[bold green]ACTIVE[/bold green]" if m['is_active'] else "[dim]inactive[/dim]"
+            table.add_row(str(m['id']), m['short_name'], str(m['context_window']), status)
+        
+        console.print(table)
+        console.print("[italic]Use :model select <ID> to switch models (requires restart).[/italic]")
+        
+    elif command == 'select':
+        if len(args) < 2:
+            console.print("[red]Usage: :model select <ID>[/red]")
+            return
+        
+        try:
+            model_id = int(args[1])
+            if conn.execute("SELECT id FROM models WHERE id = ?", (model_id,)).fetchone() is None:
+                console.print(f"[red]Model ID {model_id} not found.[/red]")
+                return
+
+            update_active_model(conn, model_id)
+            console.print(Panel("[bold green]Model switched successfully. Please restart the app to load the new engine.[/bold green]", border_style="green"))
+        except ValueError:
+            console.print("[red]ID must be a number.[/red]")
+        
+    elif command == 'add':
+        console.print("[red]I need to add this still lol you'll need to do this manually[/red]")
+        
+    else:
+        console.print(f"[red]Unknown model command: {command}[/red]")
+
 def main():
     boot_model()
     
@@ -381,6 +489,7 @@ def main():
                 elif cmd == "load": handle_load(args)
                 elif cmd == "summary": handle_summary()
                 elif cmd == "search": handle_search(args)
+                elif cmd == "model": handle_model(args)
                 else: console.print(f"[red]Unknown command: {cmd}[/red]")
             else:
                 stream_llm_response(user_input)

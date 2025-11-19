@@ -10,6 +10,9 @@ Standalone LLM chat for the terminal. Knot uses `llama.cpp`, runs the LLM direct
 * Load local .md files into chat context,
 * Generate and download summaries of a given conversation,
 
+**Note** Currently I have Phi 3 Mini and GPT OSS 20b set up: you can add more as you see fit but will need to do it manually (see **TODO** section at bottom of this README).
+**Note 2**: GPT OSS doesn't always jive well with how this is set up, reccomend Phi 3 or another model that is __not__ chain-of-thought (again, see **TODO** section).
+
 <br>
 
 ## Details
@@ -84,10 +87,21 @@ Type normally to chat or start a line with `:` to enter a command (vim style).
 | Command           | Action                                                                             |
 |-------------------|------------------------------------------------------------------------------------|
 | :new              | Start a new conversation and clear the current context                             |
-| :history          | Display past conversations                                                         |
-| :open <id>        | Switch to old conversation (only need the first few unique  characters of the UUID |
-| :load <file>      | Load a local .md file into the LLM's short term memory (WIP)                       |
-| :summary          | Download a summary of the current convo to your downloads folder as a .md          |
+| :history          | List past conversations                                                            |
+| :open <id>        | Open a conversation by its partial ID                                              |
+| :load <file>      | Load a text/md file as context                                                     |
+| :summary          | Save a summary of this chat to Downloads                                           |
 | :help             | Self explanatory                                                                   |
-| :search <term>    | Search conversations (add * at the end to search for partial matches)              |
-| :quit             | Even more self explanatory                                                         |
+| :search <term>    | Search conversations (* at end for partial matches)                                |
+| :model <cmd>      | Manage active and downloaded models (add, select, list)                            |
+| :quit             | Exit Knot                                                                          |
+
+<br>
+
+## TODO:
+* Load models from TUI with `:model add`,
+* Add ability to "branch" a new conversation from any previous message,
+* Explore possibility of web search and/or search over local documents,
+* For now need to handle how GPT OSS "thinks" visually, especially with regard to generating titles for new convos.
+
+**Longer-term**: When you change the active model today you need to restart to apply the change. This is a consequence of running the model directly inside the python process (lazy and simple way to get started with this). In the future I'd like to run `llama-cpp-python` as a separate persistent HTTP service rather than as an embedded library to make this smoother. This will also allow for models dedicated to specific tasks (eg. for generating conversation titles or summaries, etc.)... I didn't expect to build this out as much as I did so made a poor initial design decision I'll need to amend. This change will be made whenever I get sick of restarting Knot everytime I want to swap models.
