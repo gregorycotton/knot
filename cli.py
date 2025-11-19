@@ -4,6 +4,7 @@ import sqlite3
 import json
 import uuid
 from pathlib import Path
+import re
 
 # Embedded engine
 from llama_cpp import Llama
@@ -47,6 +48,23 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
         );
+        
+        -- FIX: Only index message content, not title (which lives in conversations table)
+        CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+            content, 
+            conversation_id UNINDEXED, 
+            content='messages', 
+            content_rowid='rowid'
+        );
+                       
+        -- Updated trigger to match new schema
+        CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+            INSERT INTO messages_fts(rowid, content, conversation_id) VALUES (
+                new.rowid, 
+                new.content,
+                new.conversation_id
+            );
+        END;
     """)
     conn.commit()
     return conn
@@ -132,15 +150,21 @@ def boot_model():
 def generate_smart_title(first_message):
     """Uses the LLM to generate a short title based on the user's first message."""
     try:
-        prompt = f"Generate a concise title (3-6 words) for this text: '{first_message}'. Return ONLY the title, no quotes."
+        prompt = f"Generate a succinct, 3-6 word title for this text: '{first_message}'. Return ONLY the title text."
         
         response = state.llm.create_chat_completion(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=20, 
-            temperature=0.1
+            temperature=0.1 
         )
         
         title = response['choices'][0]['message']['content'].strip().strip('"')
+        
+        title = re.sub(r'^(Title:|Word Count:|\S+\s+words|\d+ words|\S+\s+word).*', '', title, flags=re.IGNORECASE).strip()
+        
+        if not title:
+            return "Untitled Conversation"
+            
         return title
     except Exception:
         return "New Conversation"
@@ -209,7 +233,7 @@ def handle_history():
 
 def handle_open(args):
     if not args:
-        console.print("red]Usage: :open <id_fragment>[/red]")
+        console.print("[red]Usage: :open <id_fragment>[/red]")
         return
     target = args[0]
     convos = list_conversations(state.conn)
@@ -262,15 +286,71 @@ def handle_summary():
     except Exception as e:
         console.print(f"[red]Error saving file: {e}[/red]")
 
+# Command Handlers
+def handle_search(args):
+    """
+    Searches history, groups results by conversation, and displays an 
+    Occurrences count. (Sample content removed for clean output).
+    """
+    if not args:
+        console.print("[red]Usage: :search <keyword or phrase>[/red]")
+        return
+    
+    search_query = " ".join(args)
+    unique_convo_ids = set()
+    
+    try:
+        conn = state.conn
+        
+        search_results = conn.execute(
+            """
+            SELECT 
+                mfts.conversation_id AS convo_id,
+                c.title AS title,
+                COUNT(mfts.conversation_id) AS occurrences
+            FROM messages_fts mfts
+            JOIN messages m ON m.rowid = mfts.rowid
+            JOIN conversations c ON c.id = mfts.conversation_id
+            WHERE mfts.content MATCH ?
+            GROUP BY mfts.conversation_id
+            ORDER BY occurrences DESC
+            """,
+            (search_query,)
+        ).fetchall()
+
+        if not search_results:
+            console.print(f"[yellow]No results found for '{search_query}'.[/yellow]")
+            return
+
+        table = Table(title=f"Search Results for '{search_query}'")
+        table.add_column("ID", style="cyan", no_wrap=True) 
+        table.add_column("Title", style="green")
+        table.add_column("Occurrences", style="magenta")
+
+        for row in search_results:
+            table.add_row(
+                row['convo_id'][:8], # Truncated ID
+                row['title'],
+                str(row['occurrences']),
+            )
+            unique_convo_ids.add(row['convo_id'])
+            
+        console.print(table)
+        console.print(f"[italic]Found {len(unique_convo_ids)} conversation(s) matching the criteria.[/italic]")
+
+    except sqlite3.Error as e:
+        console.print(f"[bold red]Database Search Error: {e}[/bold red]")
+
 def handle_help():
     help_text = """
     [bold]Commands:[/bold]
-    :new          - Start a new conversation
-    :history      - List past conversations
-    :open <id>    - Open a conversation by its partial ID
-    :load <file>  - Load a text/md file as context
-    :summary      - Save a summary of this chat to Downloads
-    :quit         - Exit the app
+    :new            - Start a new conversation
+    :history        - List past conversations
+    :open <id>      - Open a conversation by its partial ID
+    :load <file>    - Load a text/md file as context
+    :summary        - Save a summary of this chat to Downloads
+    :search <term>  - Search conversations (* at end for partial matches)
+    :quit           - Exit the app
     """
     console.print(Panel(help_text, title="Help", border_style="white"))
 
@@ -300,6 +380,7 @@ def main():
                 elif cmd == "open": handle_open(args)
                 elif cmd == "load": handle_load(args)
                 elif cmd == "summary": handle_summary()
+                elif cmd == "search": handle_search(args)
                 else: console.print(f"[red]Unknown command: {cmd}[/red]")
             else:
                 stream_llm_response(user_input)

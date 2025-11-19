@@ -81,12 +81,13 @@ python3 cli.py
 ## Comand reference
 Type normally to chat or start a line with `:` to enter a command (vim style).
 
-| Command      | Action                                                                             |
-|--------------|------------------------------------------------------------------------------------|
-| :new         | Start a new conversation and clear the current context                             |
-| :history     | Display past conversations                                                         |
-| :open {id}   | Switch to old conversation (only need the first few unique  characters of the UUID |
-| :load {file} | Load a local .md file into the LLM's short term memory (WIP)                       |
-| :summary     | Download a summary of the current convo to your downloads folder as a .md          |
-| :help        | Self explanatory                                                                   |
-| :quit        | Even more self explanatory                                                         |
+| Command           | Action                                                                             |
+|-------------------|------------------------------------------------------------------------------------|
+| :new              | Start a new conversation and clear the current context                             |
+| :history          | Display past conversations                                                         |
+| :open <id>        | Switch to old conversation (only need the first few unique  characters of the UUID |
+| :load <file>      | Load a local .md file into the LLM's short term memory (WIP)                       |
+| :summary          | Download a summary of the current convo to your downloads folder as a .md          |
+| :help             | Self explanatory                                                                   |
+| :search <term>    | Search conversations (add * at the end to search for partial matches)              |
+| :quit             | Even more self explanatory                                                         |
