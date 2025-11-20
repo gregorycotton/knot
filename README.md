@@ -104,6 +104,7 @@ Type normally to chat or start a line with `:` to enter a command (vim style).
 * Add ability to "branch" a new conversation from any previous message,
 * Explore possibility of web search and/or search over local documents,
 * For now need to handle how GPT OSS "thinks" visually, especially with regard to generating titles for new convos.
+  * :summary also doesn't work for GPT OSS conversations due to CoT
 
 <br>
 
