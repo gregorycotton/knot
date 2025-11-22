@@ -123,6 +123,7 @@ Type normally to chat or start a line with `:` to enter a command.
 ## TODO:
 * Add ability to "branch" a new conversation from any previous message,
 * Explore possibility of web search and/or search over local documents,
-* For now need to handle how GPT OSS "thinks" visually, especially with regard to generating titles for new convos (possibly have ability to dedicate models to tasks and dedicate Phi3 to title gen)
+* For now need to handle how GPT OSS "thinks" visually, especially with regard to generating titles for new convos.
+  * :summary also doesn't work for GPT OSS conversations due to CoT
 
 **Note**: `cli.py` is kicking around in this repo but is dead weight as of right now. It was the original embedded version of Knot, but it's architecture became a bottleneck. Will delete later; it still works but is less feature rich and is a bit buggy.
