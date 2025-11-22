@@ -1,17 +1,17 @@
-# DEPRECATED – THIS FILE IS NO LONGER IN USE
-# TO DELETE
-
 import sys
 import os
 import sqlite3
 import json
 import uuid
-from pathlib import Path
 import re
+import urllib.request
+import urllib.error
+from pathlib import Path
 
-from llama_cpp import Llama
+# Download model file locally
 from huggingface_hub import hf_hub_download
 
+# TUI libs
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -20,11 +20,14 @@ from rich.live import Live
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 
+# Config
 DB_FILE = "convo/history.db"
 MODEL_DIR = "./models"
+API_URL = "http://127.0.0.1:8000"
 
 console = Console()
 
+# DB logic
 def init_db():
     os.makedirs("convo", exist_ok=True)
     conn = sqlite3.connect(DB_FILE)
@@ -73,12 +76,14 @@ def init_db():
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM models")
     if cursor.fetchone()[0] == 0:
+        # Phi-3 Mini
         cursor.execute("""
             INSERT INTO models (short_name, repo_id, filename, context_window, is_active) VALUES 
             (?, ?, ?, ?, 1)
-            """, 
+            """,
             ('phi3', 'microsoft/Phi-3-mini-4k-instruct-gguf', 'Phi-3-mini-4k-instruct-q4.gguf', 4096)
         )
+        # OpenAI GPT-OSS 20B
         cursor.execute("""
             INSERT INTO models (short_name, repo_id, filename, context_window, is_active) VALUES 
             (?, ?, ?, ?, 0)
@@ -89,11 +94,19 @@ def init_db():
     conn.commit()
     return conn
 
+# DB helpers
 def create_conversation(conn, title):
     convo_id = str(uuid.uuid4())
     conn.execute("INSERT INTO conversations (id, title) VALUES (?, ?)", (convo_id, title))
     conn.commit()
     return convo_id
+
+def delete_conversation_by_id(conn, convo_id):
+    """
+    Delete a conversation.
+    """
+    conn.execute("DELETE FROM conversations WHERE id = ?", (convo_id,))
+    conn.commit()
 
 def save_message(conn, convo_id, role, content):
     msg_id = str(uuid.uuid4())
@@ -108,24 +121,21 @@ def list_conversations(conn):
     return conn.execute("SELECT id, title, created_at FROM conversations ORDER BY created_at DESC").fetchall()
 
 def get_active_model_config(conn):
-    """Retrieves the model marked as active (is_active = 1)."""
     return conn.execute("SELECT * FROM models WHERE is_active = 1").fetchone()
 
 def update_active_model(conn, model_id):
-    """
-    Set a new model as active by ID and deactivates the others.
-    """
     conn.execute("UPDATE models SET is_active = 0")
     conn.execute("UPDATE models SET is_active = 1 WHERE id = ?", (model_id,))
     conn.commit()
 
+# App state
 class AppState:
     def __init__(self):
         self.conn = init_db()
         self.convo_id = None
         self.context_content = ""
         self.context_filename = ""
-        self.llm = None
+        self.current_model_name = ""
 
     def start_new_chat(self):
         self.convo_id = None
@@ -142,16 +152,30 @@ class AppState:
 
 state = AppState()
 
-def boot_model():
+# API Helpers
+def api_request(endpoint, payload, stream=False):
     """
-    Check DB for the active model, ensure the file is local, load it.
+    Send JSON requests to local engine.
     """
+    url = f"{API_URL}{endpoint}"
+    data = json.dumps(payload).encode('utf-8')
+    req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header('Content-Type', 'application/json')
     
+    try:
+        return urllib.request.urlopen(req)
+    except urllib.error.URLError:
+        console.print(f"[bold red]Could not connect to Engine at {API_URL}[/bold red]")
+        console.print("[italic]Did you run 'python server.py' in another terminal?[/italic]")
+        return None
+
+# Model management
+def boot_model():
     conn = state.conn
     config = get_active_model_config(conn)
 
     if not config:
-        console.print("[bold red]FATAL: No active model found. Run :model list and :model select.[/bold red]")
+        console.print("[bold red]FATAL: No active model found.[/bold red]")
         sys.exit(1)
         
     REPO_ID = config['repo_id']
@@ -162,103 +186,112 @@ def boot_model():
     os.makedirs(MODEL_DIR, exist_ok=True)
     model_path = os.path.join(MODEL_DIR, FILENAME)
 
+    # File exists locally
     if not os.path.exists(model_path):
         console.print(f"[bold yellow]Model file not found: {FILENAME}[/bold yellow]")
         console.print(f"Downloading {MODEL_NAME.upper()} from Hugging Face (This happens once)...")
         try:
-            model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, local_dir=MODEL_DIR, local_dir_use_symlinks=False)
+            # HF lib for downloading
+            # model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, local_dir=MODEL_DIR, local_dir_use_symlinks=False)
+            model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, local_dir=MODEL_DIR)
             console.print("[bold green]Download complete![/bold green]")
         except Exception as e:
             console.print(f"[bold red]Error downloading model: {e}[/bold red]")
             sys.exit(1)
 
-    console.print(f"[cyan]Loading {MODEL_NAME.upper()} into Metal (CTX={CONTEXT_WINDOW})...[/cyan]")
+    # Load it
+    abs_path = os.path.abspath(model_path)
+    console.print(f"[cyan]Requesting engine load {MODEL_NAME.upper()}...[/cyan]")
     
-    try:
-        state.llm = Llama(
-            model_path=model_path,
-            n_gpu_layers=-1, 
-            n_ctx=CONTEXT_WINDOW,
-            verbose=False
-        )
-        console.print(f"[bold green]Engine Ready. Active Model: {MODEL_NAME.upper()} (Context: {CONTEXT_WINDOW})[/bold green]")
-    except Exception as e:
-        console.print(f"[bold red]Failed to load model: {e}[/bold red]")
-        sys.exit(1)
-
+    response = api_request("/load_model", {
+        "model_path": abs_path,
+        "n_ctx": CONTEXT_WINDOW
+    })
+    
+    if response and response.status == 200:
+        state.current_model_name = MODEL_NAME
+        console.print(f"[bold green]Engine Loaded: {MODEL_NAME.upper()} (Context: {CONTEXT_WINDOW})[/bold green]")
+    else:
+        console.print("[bold red]Engine failed to load model.[/bold red]")
 
 def generate_smart_title(first_message):
-    """
-    Use the LLM to generate short title based on your first message.
-    """
-    try:
-        prompt = f"Generate a succinct, 3-6 word title for this text: '{first_message}'. Return ONLY the title text."
-        
-        response = state.llm.create_chat_completion(
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=20, 
-            temperature=0.1 
-        )
-        
-        title = response['choices'][0]['message']['content'].strip().strip('"')
-        
-        title = re.sub(r'^(Title:|Word Count:|\S+\s+words|\d+ words|\S+\s+word).*', '', title, flags=re.IGNORECASE).strip()
-        
-        if not title:
-            return "Untitled Conversation"
-            
-        return title
-    except Exception:
+    prompt = f"Generate a succinct, 3-6 word title for this text: '{first_message}'. Return ONLY the title text."
+    
+    response = api_request("/chat/completions", {
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 20, 
+        "temperature": 0.1
+    }, stream=True)
+    
+    if not response:
         return "New Conversation"
 
+    full_text = response.read().decode('utf-8')
+    title = re.sub(r'^(Title:|Word Count:|\S+\s+words|\d+ words|\S+\s+word).*', '', full_text, flags=re.IGNORECASE).strip()
+    title = title.strip('"')
+    return title if title else "Untitled Conversation"
+
+def sanitize_chat_history(history):
+    control_token_pattern = re.compile(r'<\s*\|[^>]*\|?\s*>', re.IGNORECASE) 
+    cleaned_history = []
+    for message in history:
+        cleaned_content = control_token_pattern.sub('', message['content'])
+        cleaned_history.append({
+            'role': message['role'],
+            'content': cleaned_content.strip()
+        })
+    return cleaned_history
+
+# Chat logic
 def stream_llm_response(user_input):
     if state.convo_id is None:
         with console.status("[bold yellow]Generating title...[/bold yellow]"):
             new_title = generate_smart_title(user_input)
-        
         state.convo_id = create_conversation(state.conn, new_title)
-        
         console.print(f"[dim]Conversation saved as: {new_title}[/dim]")
 
     save_message(state.conn, state.convo_id, "user", user_input)
     history = get_history(state.conn, state.convo_id)
     
+    # Context injection
     if state.context_content:
         last_msg = history[-1]
-        
         injected_content = f"Use the following context to answer the question:\n\n---\n{state.context_content}\n---\n\nUser Question: {last_msg['content']}"
-        
         history[-1]['content'] = injected_content
 
+    # Sanitize
+    clean_history = sanitize_chat_history(history)
+
+    console.print(f"\n[bold magenta]KNOT ({state.current_model_name.upper()}):[/bold magenta]")
     full_response = ""
-    console.print(f"\n[bold magenta]KNOT ({state.context_filename or 'No Context'}):[/bold magenta]")
     
+    # Request stream
+    response = api_request("/chat/completions", {
+        "messages": clean_history,
+        "temperature": 0.7
+    }, stream=True)
+
+    if not response:
+        return
+
     with Live(Markdown(""), refresh_per_second=10, auto_refresh=False) as live:
         try:
-            stream = state.llm.create_chat_completion(
-                messages=history,
-                stream=True,
-                temperature=0.7
-            )
-
-            for chunk in stream:
-                if 'content' in chunk['choices'][0]['delta']:
-                    text_chunk = chunk['choices'][0]['delta']['content']
-                    full_response += text_chunk
-                    live.update(Markdown(full_response))
-                    live.refresh()
-
+            while True:
+                chunk = response.read(1024)
+                if not chunk:
+                    break
+                text_chunk = chunk.decode('utf-8', errors='replace')
+                full_response += text_chunk
+                live.update(Markdown(full_response))
+                live.refresh()
         except Exception as e:
-            console.print(f"[bold red]Error during inference: {e}[/bold red]")
-            return
+            console.print(f"[bold red]Stream error: {e}[/bold red]")
 
     save_message(state.conn, state.convo_id, "assistant", full_response)
     console.print("") 
 
+# Commands
 def handle_history():
-    """
-    Display conversation history.
-    """
     convos = list_conversations(state.conn)
     if not convos:
         console.print("[yellow]No conversation history found.[/yellow]")
@@ -272,10 +305,35 @@ def handle_history():
     console.print(table)
     console.print("[italic]To select, type: :open <first-8-chars-of-id>[/italic]")
 
+def handle_delete(args):
+    if not args:
+        console.print("[red]Usage: :delete <id_fragment>[/red]")
+        return
+    
+    target = args[0]
+    convos = list_conversations(state.conn)
+    target_convo = None
+    
+    for c in convos:
+        if c["id"].startswith(target):
+            target_convo = c
+            break
+            
+    if not target_convo:
+        console.print(f"[red]Conversation starting with '{target}' not found.[/red]")
+        return
+
+    full_id = target_convo["id"]
+    title = target_convo["title"]
+
+    delete_conversation_by_id(state.conn, full_id)
+    console.print(f"[bold red]Deleted conversation:[/bold red] {title} ({full_id[:8]})")
+
+    if state.convo_id == full_id:
+        console.print("[yellow]Active conversation deleted. Starting fresh...[/yellow]")
+        state.start_new_chat()
+        
 def handle_open(args):
-    """
-    Open a conversation based on ID or partial ID.
-    """
     if not args:
         console.print("[red]Usage: :open <id_fragment>[/red]")
         return
@@ -288,9 +346,6 @@ def handle_open(args):
     console.print(f"[red]Conversation starting with {target} not found.[/red]")
 
 def handle_load(args):
-    """
-    Load a local .md file into the conversation context.
-    """
     if not args:
         console.print("[red]Usage: :load <path/to/file.md>[/red]")
         return
@@ -306,19 +361,6 @@ def handle_load(args):
     except Exception as e:
         console.print(f"[red]Error reading file: {e}[/red]")
 
-def sanitize_chat_history(history):
-    """Aggressively removes known problematic internal model control tokens."""
-    control_token_pattern = re.compile(r'<\s*\|[^>]*\|?\s*>', re.IGNORECASE) 
-    
-    cleaned_history = []
-    for message in history:
-        cleaned_content = control_token_pattern.sub('', message['content'])
-        cleaned_history.append({
-            'role': message['role'],
-            'content': cleaned_content.strip()
-        })
-    return cleaned_history
-
 def handle_summary():
     if state.convo_id is None:
         console.print("[red]No active conversation to summarize.[/red]")
@@ -326,20 +368,18 @@ def handle_summary():
 
     console.print("[yellow]Generating summary...[/yellow]")
     history = get_history(state.conn, state.convo_id)
+    clean_history = sanitize_chat_history(history)
+    clean_history.append({"role": "user", "content": "Summarize this entire conversation into a concise markdown note."})
     
-    cleaned_history = sanitize_chat_history(history)
-    
-    cleaned_history.append({"role": "user", "content": "Summarize this entire conversation into a concise markdown note."})
-    
-    try:
-        response = state.llm.create_chat_completion(
-            messages=cleaned_history,
-            stream=False
-        )
-        full_summary = response["choices"][0]["message"]["content"]
-    except Exception as e:
-        console.print(f"[red]Error generating summary: {e}[/red]")
+    response = api_request("/chat/completions", {
+        "messages": clean_history,
+        "temperature": 0.5
+    }, stream=True)
+
+    if not response:
         return
+
+    full_summary = response.read().decode('utf-8')
         
     filename = f"Summary_{state.convo_id[:8]}.md"
     downloads_path = Path.home() / "Downloads" / filename
@@ -350,9 +390,6 @@ def handle_summary():
         console.print(f"[red]Error saving file: {e}[/red]")
 
 def handle_search(args):
-    """
-    Search history, group results by conversation, displays a count of occurances.
-    """
     if not args:
         console.print("[red]Usage: :search <keyword or phrase>[/red]")
         return
@@ -362,7 +399,6 @@ def handle_search(args):
     
     try:
         conn = state.conn
-        
         search_results = conn.execute(
             """
             SELECT 
@@ -388,54 +424,48 @@ def handle_search(args):
         table.add_column("Occurrences", style="magenta")
 
         for row in search_results:
-            table.add_row(
-                row['convo_id'][:8], 
-                row['title'],
-                str(row['occurrences']),
-            )
+            table.add_row(row['convo_id'][:8], row['title'], str(row['occurrences']))
             unique_convo_ids.add(row['convo_id'])
             
         console.print(table)
         console.print(f"[italic]Found {len(unique_convo_ids)} conversation(s).[/italic]")
-
     except sqlite3.Error as e:
         console.print(f"[bold red]Database Search Error: {e}[/bold red]")
 
 def handle_help():
-    """
-    Help menu with descriptions of possible actions.
-    """
     help_text = """
     [bold]Commands:[/bold]
     :new            - Start a new conversation
     :history        - List past conversations
     :open <id>      - Open a conversation by its partial ID
+    :delete <id>    - Delete a conversation by its partial ID
     :load <file>    - Load a text/md file as context
     :summary        - Save a summary of this chat to Downloads
-    :search <term>  - Search conversations (* at end for partial matches)
-    :model <cmd>    - Manage active and downloaded models (add, select, list)
+    :search <term>  - Search conversations
+    :model <cmd>    - Manage active models (list, select)
     :quit           - Exit Knot
     """
     console.print(Panel(help_text, title="Help", border_style="white"))
 
-def handle_model(args):
+def handle_model(args, session):
     """
-    Manages models: list, select, add (WIP).
+    Manage models: list, select, add.
     """
     if not args:
-        console.print("[red]Usage: :model <list | select <ID>>[/red]")
+        console.print("[red]Usage: :model <list | select | add>[/red]")
         return
     
     command = args[0].lower()
     conn = state.conn
 
+    # List
     if command == 'list':
-        models = conn.execute("SELECT id, short_name, repo_id, context_window, is_active FROM models").fetchall()
+        models = conn.execute("SELECT id, short_name, repo_id, filename, context_window, is_active FROM models").fetchall()
         
         table = Table(title="Available Models")
         table.add_column("ID", style="cyan", no_wrap=True)
-        table.add_column("Name", style="yellow")
-        table.add_column("Context (n_ctx)", style="magenta")
+        table.add_column("Short Name", style="yellow")
+        table.add_column("Context", style="magenta")
         table.add_column("Status", style="green")
 
         for m in models:
@@ -443,8 +473,8 @@ def handle_model(args):
             table.add_row(str(m['id']), m['short_name'], str(m['context_window']), status)
         
         console.print(table)
-        console.print("[italic]Use :model select <ID> to switch models (requires restart).[/italic]")
-        
+    
+    # Select
     elif command == 'select':
         if len(args) < 2:
             console.print("[red]Usage: :model select <ID>[/red]")
@@ -457,22 +487,70 @@ def handle_model(args):
                 return
 
             update_active_model(conn, model_id)
-            console.print(Panel("[bold green]Model switched successfully. Please restart the app to load the new engine.[/bold green]", border_style="green"))
+            boot_model()
+            
         except ValueError:
             console.print("[red]ID must be a number.[/red]")
-        
+
+    # Add
     elif command == 'add':
-        console.print("[red]I need to add this still lol you'll need to do this manually[/red]")
-        
+        console.print(Panel("[bold cyan]Add New Model Configuration[/bold cyan]\n[dim]You will need the HuggingFace Repo ID and the specific GGUF filename.[/dim]", border_style="cyan"))
+
+        try:
+            # Short Name
+            while True:
+                name = session.prompt("1. Short Name (e.g. 'mistral'): ").strip()
+                if not name: continue
+                if conn.execute("SELECT 1 FROM models WHERE short_name = ?", (name,)).fetchone():
+                    console.print(f"[red]Name '{name}' already exists. Pick another.[/red]")
+                    continue
+                break
+
+            # Repo ID
+            repo = session.prompt("2. HuggingFace Repo (e.g. 'TheBloke/Mistral-7B-GGUF'): ").strip()
+            if not repo: 
+                console.print("[red]Cancelled.[/red]")
+                return
+
+            # Filename
+            console.print("[italic dim]Tip: Go to the 'Files' tab on HuggingFace and copy the filename of a Q4_K_M.gguf file.[/italic dim]")
+            filename = session.prompt("3. GGUF Filename (e.g. 'mistral-7b.Q4_K_M.gguf'): ").strip()
+            if not filename.endswith('.gguf'):
+                console.print("[yellow]Warning: Filename usually ends in .gguf[/yellow]")
+            
+            # Context window
+            ctx_input = session.prompt("4. Context Window (default 4096): ").strip()
+            ctx = int(ctx_input) if ctx_input.isdigit() else 4096
+
+            # Save
+            console.print(f"\n[bold]Summary:[/bold]\nName: {name}\nRepo: {repo}\nFile: {filename}\nCtx:  {ctx}")
+            confirm = session.prompt("Save this model? (y/n): ").lower()
+            
+            if confirm == 'y':
+                conn.execute("""
+                    INSERT INTO models (short_name, repo_id, filename, context_window, is_active) 
+                    VALUES (?, ?, ?, ?, 0)
+                """, (name, repo, filename, ctx))
+                conn.commit()
+                console.print(f"[bold green]Model '{name}' added![/bold green]")
+                console.print(f"[italic]Type ':model select <id>' to switch to it. (Download will start automatically on switch)[/italic]")
+            else:
+                console.print("[yellow]Operation cancelled.[/yellow]")
+
+        except KeyboardInterrupt:
+            console.print("\n[red]Cancelled.[/red]")
+            return
+
     else:
         console.print(f"[red]Unknown model command: {command}[/red]")
 
 def main():
+    console.print("[bold yellow]Connecting to Knot Engine...[/bold yellow]")
     boot_model()
     
     session = PromptSession(history=InMemoryHistory())
     state.start_new_chat()
-    console.print("[bold yellow]Welcome to Knot CLI (Embedded Mode).[/bold yellow] Type [bold]:help[/bold] for commands.")
+    console.print("[bold yellow]Welcome to Knot CLI (Client Mode).[/bold yellow] Type [bold]:help[/bold] for commands.")
 
     while True:
         try:
@@ -491,9 +569,10 @@ def main():
                 elif cmd == "new": state.start_new_chat()
                 elif cmd == "open": handle_open(args)
                 elif cmd == "load": handle_load(args)
+                elif cmd == "delete": handle_delete(args)
                 elif cmd == "summary": handle_summary()
                 elif cmd == "search": handle_search(args)
-                elif cmd == "model": handle_model(args)
+                elif cmd == "model": handle_model(args, session)
                 else: console.print(f"[red]Unknown command: {cmd}[/red]")
             else:
                 stream_llm_response(user_input)
