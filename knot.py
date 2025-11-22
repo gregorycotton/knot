@@ -72,24 +72,6 @@ def init_db():
             );
         END;
     """);
-    
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM models")
-    if cursor.fetchone()[0] == 0:
-        # Phi-3 Mini
-        cursor.execute("""
-            INSERT INTO models (short_name, repo_id, filename, context_window, is_active) VALUES 
-            (?, ?, ?, ?, 1)
-            """,
-            ('phi3', 'microsoft/Phi-3-mini-4k-instruct-gguf', 'Phi-3-mini-4k-instruct-q4.gguf', 4096)
-        )
-        # OpenAI GPT-OSS 20B
-        cursor.execute("""
-            INSERT INTO models (short_name, repo_id, filename, context_window, is_active) VALUES 
-            (?, ?, ?, ?, 0)
-            """, 
-            ('gpt-oss', 'bartowski/openai_gpt-oss-20b-GGUF', 'openai_gpt-oss-20b-Q4_K_M.gguf', 8192)
-        )
 
     conn.commit()
     return conn
@@ -170,14 +152,50 @@ def api_request(endpoint, payload, stream=False):
         return None
 
 # Model management
-def boot_model():
+def boot_model(session=None):
     conn = state.conn
     config = get_active_model_config(conn)
 
     if not config:
-        console.print("[bold red]FATAL: No active model found.[/bold red]")
-        sys.exit(1)
+        count = conn.execute("SELECT COUNT(*) FROM models").fetchone()[0]
         
+        if count == 0:
+            # No model found
+            console.print(Panel("[bold yellow]Welcome to Knot![/bold yellow]\nNo models found. Let's set one up.", border_style="yellow"))
+            
+            if session:
+                console.print("1. Quick Start (Download Phi-3 Mini - 2.4GB)")
+                console.print("2. Custom (Enter Repo ID manually)")
+                
+                choice = session.prompt("Choose (1/2): ").strip()
+                
+                if choice == '1':
+                    repo = "microsoft/Phi-3-mini-4k-instruct-gguf"
+                    filename = "Phi-3-mini-4k-instruct-q4.gguf"
+                    name = "phi3"
+                    ctx = 4096
+                    conn.execute("INSERT INTO models (short_name, repo_id, filename, context_window, is_active) VALUES (?, ?, ?, ?, 1)", (name, repo, filename, ctx))
+                    conn.commit()
+                else:
+                    handle_model(['add'], session)
+                    if conn.execute("SELECT COUNT(*) FROM models").fetchone()[0] == 0:
+                        console.print("[red]No model added. Exiting.[/red]")
+                        sys.exit(1)
+                    conn.execute("UPDATE models SET is_active = 1 WHERE id = (SELECT MAX(id) FROM models)")
+                    conn.commit()
+            else:
+                console.print("[red]No models found and no session available. Exiting.[/red]")
+                sys.exit(1)
+                
+            config = get_active_model_config(conn)
+            
+        else:
+            # Models exist but none active
+            conn.execute("UPDATE models SET is_active = 1 WHERE id = (SELECT MIN(id) FROM models)")
+            conn.commit()
+            config = get_active_model_config(conn)
+            console.print("[yellow]No active model selected. Auto-selected the first available model.[/yellow]")
+
     REPO_ID = config['repo_id']
     FILENAME = config['filename']
     CONTEXT_WINDOW = config['context_window']
@@ -186,20 +204,16 @@ def boot_model():
     os.makedirs(MODEL_DIR, exist_ok=True)
     model_path = os.path.join(MODEL_DIR, FILENAME)
 
-    # File exists locally
     if not os.path.exists(model_path):
         console.print(f"[bold yellow]Model file not found: {FILENAME}[/bold yellow]")
         console.print(f"Downloading {MODEL_NAME.upper()} from Hugging Face (This happens once)...")
         try:
-            # HF lib for downloading
-            # model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, local_dir=MODEL_DIR, local_dir_use_symlinks=False)
             model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, local_dir=MODEL_DIR)
             console.print("[bold green]Download complete![/bold green]")
         except Exception as e:
             console.print(f"[bold red]Error downloading model: {e}[/bold red]")
             sys.exit(1)
 
-    # Load it
     abs_path = os.path.abspath(model_path)
     console.print(f"[cyan]Requesting engine load {MODEL_NAME.upper()}...[/cyan]")
     
@@ -442,7 +456,7 @@ def handle_help():
     :load <file>    - Load a text/md file as context
     :summary        - Save a summary of this chat to Downloads
     :search <term>  - Search conversations
-    :model <cmd>    - Manage active models (list, select)
+    :model <cmd>    - Manage active models (list, select, add)
     :quit           - Exit Knot
     """
     console.print(Panel(help_text, title="Help", border_style="white"))
@@ -487,7 +501,7 @@ def handle_model(args, session):
                 return
 
             update_active_model(conn, model_id)
-            boot_model()
+            boot_model(session)
             
         except ValueError:
             console.print("[red]ID must be a number.[/red]")
@@ -546,9 +560,11 @@ def handle_model(args, session):
 
 def main():
     console.print("[bold yellow]Connecting to Knot Engine...[/bold yellow]")
-    boot_model()
     
     session = PromptSession(history=InMemoryHistory())
+    
+    boot_model(session)
+    
     state.start_new_chat()
     console.print("[bold yellow]Welcome to Knot CLI (Client Mode).[/bold yellow] Type [bold]:help[/bold] for commands.")
 

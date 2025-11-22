@@ -3,7 +3,6 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from llama_cpp import Llama
 
-# Global state
 model_state = {"llm": None, "path": None}
 
 class InferenceHandler(BaseHTTPRequestHandler):

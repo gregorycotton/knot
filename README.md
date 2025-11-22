@@ -67,6 +67,8 @@ pip install rich prompt_toolkit huggingface_hub
 
 #### 4. Use the thing
 WIP still so lots for me to fix but can be played around with now.
+**Note**: By default Phi 3 mini will be downloaded upon running. ~sub-2.5GB in size. This can be changed by altering the code yourself though (crtl+f in `knot.py` for "No model found" (should be around line 160)).
+
 Run the server in the background and the client in the foreground:
 ```bash
 # In one terminal tab
