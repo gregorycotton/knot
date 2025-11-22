@@ -111,16 +111,16 @@ Type normally to chat or start a line with `:` to enter a command.
 
 | Command           | Action                                                                             |
 |-------------------|------------------------------------------------------------------------------------|
-| :new              | Start a new conversation and clear the current context                             |
-| :history          | List past conversations                                                            |
-| :open <id>        | Open a conversation by its partial ID                                              |
-| :delete <id>      | Delete a conversation permenantly                                                  |
-| :load <file>      | Load a text/md file as context                                                     |
-| :summary          | Save a summary of this chat to Downloads                                           |
-| :help             | Self explanatory                                                                   |
-| :search <term>    | Search conversations (* at end for partial matches)                                |
-| :model <cmd>      | Manage active / downloaded models (add, select, list)                              |
-| :quit             | Exit Knot                                                                          |
+| `:new`            | Start a new conversation and clear the current context                             |
+| `:history`        | List past conversations                                                            |
+| `:open <id>`      | Open a conversation by its partial ID                                              |
+| `:delete <id>`    | Delete a conversation permenantly                                                  |
+| `:load <file>`    | Load a text/md file as context                                                     |
+| `:summary`        | Save a summary of this chat to Downloads                                           |
+| `:help`           | Self explanatory                                                                   |
+| `:search <term>`  | Search conversations (* at end for partial matches)                                |
+| `:model <cmd>`    | Manage active / downloaded models (add, select, list)                              |
+| `:quit`           | Exit Knot                                                                          |
 
 <br>
 
@@ -129,7 +129,7 @@ Type normally to chat or start a line with `:` to enter a command.
 #### Known errors
 * If you mistype any detail while adding a model the program terminates. Upon re-opening tries re-installing, fails, and boots you again – only way to solve right now is by manually deleting the faulty model record from the SQLite DB.
 * A markdown file into chat context persists across all new convos with the only way to remove it being to restart Knot.
-* :summary command doesn't work for GPT OSS converations due to CoT.
+* `:summary` command doesn't work for GPT OSS converations due to CoT.
 
 <br>
 
