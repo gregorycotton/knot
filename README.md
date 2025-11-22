@@ -1,14 +1,15 @@
+![Knot banner image](https://github.com/gregorycotton/knot/blob/main/img/knot.webp)
+
 # 🪢 Knot
 Knot is my client-server TUI for running LLMs locally.
 
-<br>
-
-## Features
 * Convos automatically saved to SQLite DB,
 * Install models to run locally,
 * Markdown rendering, tables, syntax highlighting, etc.,
 * Load .md files into chat context,
-* Generate and download summaries of a given conversation;
+* Generate and download summaries of a given conversation.
+
+See the TODO section at the bottom of the README for known errors and future improvments.
 
 <br>
 
@@ -50,10 +51,11 @@ source knot/bin/activate
 <br>
 
 #### 2. Install engine with Metal support
-Compile `llama-cpp-python` with Metal support to use Mac GPU. __(If you are on Linux/Windows, you should be able to just omit the CMAKE_ARGS part)__:
+Compile `llama-cpp-python` with Metal support to use Mac GPU:
 ```bash
 CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python
 ```
+**Note**: If you are on Linux/Windows, you should be able to just omit the CMAKE_ARGS part.
 
 <br>
 
@@ -79,7 +81,7 @@ python3 knot.py
 ```
 **Note**: It's cumbersome to cd into your directory, activate your venv and run two python files whenever you want to use knot. I've created a custom command by adding an alias to my shell config file so that I can run `knot` from anywhere in my terminal to automatically activate the venv and launch the application. Example:
 ```bash
-# #!/bin/bash
+#!/bin/bash
 
 cd /{YOUR_FILE_PATH}/knot || exit
 
@@ -117,16 +119,21 @@ Type normally to chat or start a line with `:` to enter a command.
 | :summary          | Save a summary of this chat to Downloads                                           |
 | :help             | Self explanatory                                                                   |
 | :search <term>    | Search conversations (* at end for partial matches)                                |
-| :model <cmd>      | Manage active / downloaded models (add, select, list)                            |
+| :model <cmd>      | Manage active / downloaded models (add, select, list)                              |
 | :quit             | Exit Knot                                                                          |
 
 <br>
 
 ## TODO:
-* <span style="color:red">Bug to fix: if you mis-enter any detail while adding a model app exits and upon re-opening tries re-installing, fails, and boots you again – only way to solve right now is by manually deleting the faulty model record from the SQLite DB.</span>
+
+#### Known errors
+* If you mistype any detail while adding a model the program terminates. Upon re-opening tries re-installing, fails, and boots you again – only way to solve right now is by manually deleting the faulty model record from the SQLite DB.
+* A markdown file into chat context persists across all new convos with the only way to remove it being to restart Knot.
+* :summary command doesn't work for GPT OSS converations due to CoT.
+
+<br>
+
+#### Future improvements
 * Add ability to "branch" a new conversation from any previous message,
 * Explore possibility of web search and/or search over local documents,
 * For now need to handle how GPT OSS "thinks" visually, especially with regard to generating titles for new convos.
-  * :summary also doesn't work for GPT OSS conversations due to CoT
-
-**Note**: `cli.py` is kicking around in this repo but is dead weight as of right now. It was the original embedded version of Knot, but it's architecture became a bottleneck. Will delete later; it still works but is less feature rich and is a bit buggy.
