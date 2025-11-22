@@ -123,6 +123,7 @@ Type normally to chat or start a line with `:` to enter a command.
 <br>
 
 ## TODO:
+* <span style="color:red">Bug to fix: if you mis-enter any detail while adding a model app exits and upon re-opening tries re-installing, fails, and boots you again – only way to solve right now is by manually deleting the faulty model record from the SQLite DB.</span>
 * Add ability to "branch" a new conversation from any previous message,
 * Explore possibility of web search and/or search over local documents,
 * For now need to handle how GPT OSS "thinks" visually, especially with regard to generating titles for new convos.
