@@ -566,7 +566,7 @@ def main():
     boot_model(session)
     
     state.start_new_chat()
-    console.print("[bold yellow]Welcome to Knot CLI (Client Mode).[/bold yellow] Type [bold]:help[/bold] for commands.")
+    console.print("[bold yellow]Welcome to Knot.[/bold yellow] Type [bold]:help[/bold] for commands.")
 
     while True:
         try:
