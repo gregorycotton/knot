@@ -128,7 +128,6 @@ Type normally to chat or start a line with `:` to enter a command.
 
 #### Known errors
 * If you mistype any detail while adding a model the program terminates. Upon re-opening tries re-installing, fails, and boots you again – only way to solve right now is by manually deleting the faulty model record from the SQLite DB.
-* Loading a markdown file into the chat context persists across all new convos, the only way to remove it being to restart Knot.
 * `:summary` command doesn't work for GPT OSS converations due to CoT.
 
 <br>

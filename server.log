@@ -27,6 +27,4 @@ ggml_metal_init: skipping kernel_flash_attn_ext_vec_bf16_hk576_hv512 (not suppor
 ggml_metal_init: skipping kernel_cpy_f32_bf16                      (not supported)
 ggml_metal_init: skipping kernel_cpy_bf16_f32                      (not supported)
 ggml_metal_init: skipping kernel_cpy_bf16_bf16                     (not supported)
-127.0.0.1 - - [23/Nov/2025 01:32:04] "POST /load_model HTTP/1.1" 200 -
-127.0.0.1 - - [23/Nov/2025 01:32:30] "POST /chat/completions HTTP/1.1" 200 -
-127.0.0.1 - - [23/Nov/2025 01:33:09] "POST /chat/completions HTTP/1.1" 200 -
+127.0.0.1 - - [23/Nov/2025 11:37:02] "POST /load_model HTTP/1.1" 200 -

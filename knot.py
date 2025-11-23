@@ -121,6 +121,8 @@ class AppState:
 
     def start_new_chat(self):
         self.convo_id = None
+        self.context_content = ""
+        self.context_filename = ""
         console.print(Panel("[bold green]Ready. (Conversation will be saved on first message)[/bold green]", border_style="green"))
 
     def set_active_convo(self, convo_id, title):
@@ -304,7 +306,7 @@ def stream_llm_response(user_input):
                     full_response += char
                     live.update(Markdown(full_response))
                     live.refresh()
-                    
+
         except Exception as e:
             console.print(f"[bold red]Stream error: {e}[/bold red]")
 
