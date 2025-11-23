@@ -3,10 +3,10 @@
 # 🪢 Knot
 Knot is my client-server TUI for running LLMs locally.
 
-* Convos automatically saved to SQLite DB,
-* Install models to run locally,
-* Markdown rendering, tables, syntax highlighting, etc.,
-* Load .md files into chat context,
+* Convos automatically saved to SQLite DB.
+* Install models to run locally.
+* Markdown rendering, tables, syntax highlighting, etc.
+* Load .md files into chat context.
 * Generate and download summaries of a given conversation.
 
 See the TODO section at the bottom of the README for known errors and future improvments.
@@ -14,7 +14,7 @@ See the TODO section at the bottom of the README for known errors and future imp
 <br>
 
 ## Details
-Knot consists of two component that run simultaneously, `server.py`, the lightweight HTTP inference server which uses `llama-cpp-python`, and `knot.py`, the TUI client that renders the streaming response.
+Knot consists of two component that run simultaneously, `server.py`, the inference server which uses `llama-cpp-python`, and `knot.py`, the TUI client that renders the streaming response.
 
 <br>
 
@@ -128,12 +128,12 @@ Type normally to chat or start a line with `:` to enter a command.
 
 #### Known errors
 * If you mistype any detail while adding a model the program terminates. Upon re-opening tries re-installing, fails, and boots you again – only way to solve right now is by manually deleting the faulty model record from the SQLite DB.
-* A markdown file into chat context persists across all new convos with the only way to remove it being to restart Knot.
+* Loading a markdown file into the chat context persists across all new convos, the only way to remove it being to restart Knot.
 * `:summary` command doesn't work for GPT OSS converations due to CoT.
 
 <br>
 
 #### Future improvements
-* Add ability to "branch" a new conversation from any previous message,
-* Explore possibility of web search and/or search over local documents,
+* Add ability to "branch" a new conversation from any previous message.
+* Explore possibility of web search and/or search over local documents.
 * For now need to handle how GPT OSS "thinks" visually, especially with regard to generating titles for new convos.
