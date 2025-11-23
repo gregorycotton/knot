@@ -69,6 +69,7 @@ pip install rich prompt_toolkit huggingface_hub
 
 #### 4. Use the thing
 WIP still so lots for me to fix but can be played around with now.
+
 **Note**: By default Phi 3 mini will be downloaded upon running. ~sub-2.5GB in size. This can be changed by altering the code yourself though (crtl+f in `knot.py` for "No model found" (should be around line 160)).
 
 Run the server in the background and the client in the foreground:
@@ -107,7 +108,7 @@ Make this executable and alias it to `knot` in your shell config.
 <br>
 
 ## Comand reference
-Type normally to chat or start a line with `:` to enter a command.
+Type normally to chat or start a line with `:` to enter a command. Quick overview:
 
 | Command           | Action                                                                             |
 |-------------------|------------------------------------------------------------------------------------|
@@ -117,10 +118,17 @@ Type normally to chat or start a line with `:` to enter a command.
 | `:delete <id>`    | Delete a conversation permenantly                                                  |
 | `:load <file>`    | Load a text/md file as context                                                     |
 | `:summary`        | Save a summary of this chat to Downloads                                           |
-| `:help`           | Self explanatory                                                                   |
 | `:search <term>`  | Search conversations (* at end for partial matches)                                |
+| `:job <cmd>`      | Assign tasks to models (list, set summary, set title)                              |
 | `:model <cmd>`    | Manage active / downloaded models (add, select, list)                              |
 | `:quit`           | Exit Knot                                                                          |
+| `:help`           | View possible commands                                                             |
+
+To set a model's job using the `:job` command, use `:job set <task> <model_ID>`. Currently, the two tasks available for designating models to are `summary` (ie. the `:summary` command) and `title` (ie. generating a title for the conversation). For example:
+* `job set title 1` ensures all titles are generated using the model with the ID of `1`.
+* `job set summary 2` ensures all conversations are summarized using then model with the ID of `2`.
+
+**Note**: I would currently reccomend using a non-CoT model for these jobs (see known errors).
 
 <br>
 
@@ -128,11 +136,13 @@ Type normally to chat or start a line with `:` to enter a command.
 
 #### Known errors
 * If you mistype any detail while adding a model the program terminates. Upon re-opening tries re-installing, fails, and boots you again – only way to solve right now is by manually deleting the faulty model record from the SQLite DB.
-* `:summary` command doesn't work for GPT OSS converations due to CoT.
+* CoT models title gen includes CoT tokens/generally is no good (low-priority as ability to set a model job to title gen exists)
+* `:summary` command sometimes doesn't work well for GPT OSS converations due to CoT.
 
 <br>
 
 #### Future improvements
 * Add ability to "branch" a new conversation from any previous message.
+* Need to explore most expedient way to display maths/proofs, etc.
 * Explore possibility of web search and/or search over local documents.
-* For now need to handle how GPT OSS "thinks" visually, especially with regard to generating titles for new convos.
+* Hide 'thinking' from models by default with optional command to expose/toggle CoT tokens.
