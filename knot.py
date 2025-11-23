@@ -295,9 +295,16 @@ def stream_llm_response(user_input):
                 if not chunk:
                     break
                 text_chunk = chunk.decode('utf-8', errors='replace')
-                full_response += text_chunk
-                live.update(Markdown(full_response))
-                live.refresh()
+                
+                # full_response += text_chunk
+                # live.update(Markdown(full_response))
+                # live.refresh()
+
+                for char in text_chunk:
+                    full_response += char
+                    live.update(Markdown(full_response))
+                    live.refresh()
+                    
         except Exception as e:
             console.print(f"[bold red]Stream error: {e}[/bold red]")
 
