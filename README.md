@@ -146,3 +146,4 @@ To set a model's job using the `:job` command, use `:job set <task> <model_ID>`.
 * Need to explore most expedient way to display maths/proofs, etc.
 * Explore possibility of web search and/or search over local documents.
 * Hide 'thinking' from models by default with optional command to expose/toggle CoT tokens.
+* CoT tokens being saved to DB means they eat up context windows.
