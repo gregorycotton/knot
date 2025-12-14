@@ -187,7 +187,11 @@ def ensure_utility_model_loaded(task):
     model_path = os.path.join(MODEL_DIR, FILENAME)
     if not os.path.exists(model_path):
         console.print(f"[dim]Downloading utility model {model_config['short_name']}...[/dim]")
-        hf_hub_download(repo_id=REPO_ID, filename=FILENAME, local_dir=MODEL_DIR)
+        try:
+            hf_hub_download(repo_id=REPO_ID, filename=FILENAME, local_dir=MODEL_DIR)
+        except Exception:
+            # If a utility model fails, we just silently fail back to main model
+            return False
 
     abs_path = os.path.abspath(model_path)
     
@@ -235,10 +239,14 @@ def boot_model(session=None):
             config = get_active_model_config(conn)
 
     # Standard boot
+    if not config:
+        return
+
     REPO_ID = config['repo_id']
     FILENAME = config['filename']
     CONTEXT_WINDOW = config['context_window']
     MODEL_NAME = config['short_name']
+    MODEL_ID = config['id']
 
     os.makedirs(MODEL_DIR, exist_ok=True)
     model_path = os.path.join(MODEL_DIR, FILENAME)
@@ -250,8 +258,17 @@ def boot_model(session=None):
             model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, local_dir=MODEL_DIR)
             console.print("[bold green]Download complete![/bold green]")
         except Exception as e:
-            console.print(f"[bold red]Error downloading model: {e}[/bold red]")
-            sys.exit(1)
+            # === SAFE MODE FALLBACK ===
+            console.print("\n[bold red]Download failed due to incorrect model details.[/bold red]")
+            console.print(f"[bold yellow]Model {MODEL_ID} is being removed. Please select a different model or try again.[/bold yellow]")
+            console.print(f"[dim]Error: {e}[/dim]")
+            
+            # Remove bad record
+            conn.execute("DELETE FROM models WHERE id = ?", (MODEL_ID,))
+            conn.commit()
+            
+            # Do NOT sys.exit. Return to main loop.
+            return 
 
     abs_path = os.path.abspath(model_path)
     console.print(f"[cyan]Requesting engine load {MODEL_NAME.upper()}...[/cyan]")

@@ -135,7 +135,6 @@ To set a model's job using the `:job` command, use `:job set <task> <model_ID>`.
 ## TODO:
 
 #### Known errors
-* If you mistype any detail while adding a model the program terminates. Upon re-opening tries re-installing, fails, and boots you again – only way to solve right now is by manually deleting the faulty model record from the SQLite DB.
 * CoT models title gen includes CoT tokens/generally is no good (low-priority as ability to set a model job to title gen exists)
 * `:summary` command sometimes doesn't work well for GPT OSS converations due to CoT.
 

@@ -1,6 +1,5 @@
 Dual-Engine Server Running on :8000
-Loading [MAIN]: openai_gpt-oss-20b-Q4_K_M.gguf ...
-llama_context: n_ctx_per_seq (24000) < n_ctx_train (131072) -- the full capacity of the model will not be utilized
+Loading [MAIN]: Phi-3-mini-4k-instruct-q4.gguf ...
 ggml_metal_init: skipping kernel_get_rows_bf16                     (not supported)
 ggml_metal_init: skipping kernel_set_rows_bf16                     (not supported)
 ggml_metal_init: skipping kernel_mul_mv_bf16_f32                   (not supported)
@@ -30,5 +29,4 @@ ggml_metal_init: skipping kernel_flash_attn_ext_vec_bf16_hk576_hv512 (not suppor
 ggml_metal_init: skipping kernel_cpy_f32_bf16                      (not supported)
 ggml_metal_init: skipping kernel_cpy_bf16_f32                      (not supported)
 ggml_metal_init: skipping kernel_cpy_bf16_bf16                     (not supported)
-llama_kv_cache_unified_iswa: using full-size SWA cache (ref: https://github.com/ggml-org/llama.cpp/pull/13194#issuecomment-2868343055)
-127.0.0.1 - - [25/Nov/2025 19:39:26] "POST /load_model HTTP/1.1" 200 -
+127.0.0.1 - - [14/Dec/2025 18:42:03] "POST /load_model HTTP/1.1" 200 -
