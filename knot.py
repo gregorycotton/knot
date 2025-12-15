@@ -12,11 +12,12 @@ from pathlib import Path
 from huggingface_hub import hf_hub_download
 
 # TUI libs
-from rich.console import Console
+from rich.console import Console, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 from rich.live import Live
+from rich.spinner import Spinner
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 
@@ -48,12 +49,15 @@ def init_db():
             FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
         );
         
+        -- UPDATED: Added thought_start and thought_end columns
         CREATE TABLE IF NOT EXISTS models (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             short_name TEXT UNIQUE NOT NULL,
             repo_id TEXT NOT NULL,
             filename TEXT NOT NULL,
             context_window INTEGER NOT NULL,
+            thought_start TEXT,
+            thought_end TEXT,
             is_active INTEGER DEFAULT 0
         );
         
@@ -134,6 +138,7 @@ class AppState:
         self.context_content = ""
         self.context_filename = ""
         self.current_model_name = ""
+        self.show_thoughts = True
 
     def start_new_chat(self):
         self.convo_id = None
@@ -190,7 +195,6 @@ def ensure_utility_model_loaded(task):
         try:
             hf_hub_download(repo_id=REPO_ID, filename=FILENAME, local_dir=MODEL_DIR)
         except Exception:
-            # If a utility model fails, we just silently fail back to main model
             return False
 
     abs_path = os.path.abspath(model_path)
@@ -216,7 +220,7 @@ def boot_model(session=None):
                 console.print("1. Quick Start (Download Phi-3 Mini, ~2.4GB)")
                 console.print("2. Custom (Enter Repo ID manually)")
                 choice = session.prompt("Choose (1/2): ").strip()
-                # Phi-3 Mini as default
+                # Phi-3 Mini as default for now
                 if choice == '1':
                     repo = "microsoft/Phi-3-mini-4k-instruct-gguf"
                     filename = "Phi-3-mini-4k-instruct-q4.gguf"
@@ -238,7 +242,6 @@ def boot_model(session=None):
             conn.commit()
             config = get_active_model_config(conn)
 
-    # Standard boot
     if not config:
         return
 
@@ -258,16 +261,13 @@ def boot_model(session=None):
             model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, local_dir=MODEL_DIR)
             console.print("[bold green]Download complete![/bold green]")
         except Exception as e:
-            # === SAFE MODE FALLBACK ===
             console.print("\n[bold red]Download failed due to incorrect model details.[/bold red]")
             console.print(f"[bold yellow]Model {MODEL_ID} is being removed. Please select a different model or try again.[/bold yellow]")
             console.print(f"[dim]Error: {e}[/dim]")
             
-            # Remove bad record
             conn.execute("DELETE FROM models WHERE id = ?", (MODEL_ID,))
             conn.commit()
             
-            # Do NOT sys.exit. Return to main loop.
             return 
 
     abs_path = os.path.abspath(model_path)
@@ -324,7 +324,6 @@ def sanitize_chat_history(history):
         })
     return cleaned_history
 
-# Chat logic
 def stream_llm_response(user_input):
     if state.convo_id is None:
         with console.status("[bold yellow]Generating title...[/bold yellow]"):
@@ -341,34 +340,119 @@ def stream_llm_response(user_input):
         history[-1]['content'] = injected_content
 
     clean_history = sanitize_chat_history(history)
+    
+    config = get_active_model_config(state.conn)
+    T_START = config['thought_start'] if config and config['thought_start'] else None
+    T_END = config['thought_end'] if config and config['thought_end'] else None
+    
+    has_cot = (T_END is not None)
 
     console.print(f"\n[bold magenta]KNOT ({state.current_model_name.upper()}):[/bold magenta]")
-    full_response = ""
     
+    full_response_text = ""
+    clean_response_text = ""
+    buffer = ""
+    
+    is_thinking = (T_START is None and T_END is not None)
+    
+    if is_thinking and state.show_thoughts:
+         full_response_text += "> " 
+
     response = api_request("/chat/completions", {
         "messages": clean_history,
         "temperature": 0.7
     }, stream=True)
 
-    if not response:
-        return
+    if not response: return
 
-    with Live(Markdown(""), refresh_per_second=10, auto_refresh=False) as live:
+    with Live(Markdown(""), refresh_per_second=12, auto_refresh=False) as live:
         try:
             while True:
                 chunk = response.read(1024)
                 if not chunk: break
                 text_chunk = chunk.decode('utf-8', errors='replace')
 
+                if not has_cot:
+                    for char in text_chunk:
+                        full_response_text += char
+                        clean_response_text += char
+                        live.update(Markdown(full_response_text))
+                        live.refresh()
+                    continue
+
                 for char in text_chunk:
-                    full_response += char
-                    live.update(Markdown(full_response))
-                    live.refresh()
+                    buffer += char
+                    
+                    if not is_thinking and T_START:
+                        if T_START in buffer:
+                            pre_tag = buffer.split(T_START)[0]
+                            full_response_text += pre_tag
+                            clean_response_text += pre_tag
+                            
+                            is_thinking = True
+                            buffer = "" 
+                            
+                            if state.show_thoughts:
+                                full_response_text += "\n> "
+                            continue
+                    
+                    if is_thinking:
+                        if T_END in buffer:
+                            thought_content = buffer.split(T_END)[0]
+                            
+                            if state.show_thoughts:
+                                formatted_thought = thought_content.replace("\n", "\n> ")
+                                full_response_text += formatted_thought + "\n\n"
+                            
+                            is_thinking = False
+                            buffer = ""
+                            continue
+
+                    max_len = len(T_END) + 8
+                    if T_START:
+                        max_len = max(max_len, len(T_START) + 8)
+
+                    if len(buffer) > max_len:
+                        char_to_flush = buffer[0]
+                        buffer = buffer[1:]
+                        
+                        if is_thinking:
+                            if state.show_thoughts:
+                                if char_to_flush == "\n":
+                                    full_response_text += "\n> "
+                                else:
+                                    full_response_text += char_to_flush
+                        else:
+                            full_response_text += char_to_flush
+                            clean_response_text += char_to_flush
+
+                    if is_thinking and not state.show_thoughts:
+                        spinner = Spinner("dots", text="Thinking...", style="yellow")
+                        live.update(Group(Markdown(full_response_text), spinner))
+                        live.refresh()
+                    else:
+                        preview_text = full_response_text
+                        if buffer:
+                            if is_thinking and state.show_thoughts:
+                                 preview_text += buffer.replace("\n", "\n> ")
+                            elif not is_thinking:
+                                 preview_text += buffer
+                        
+                        live.update(Markdown(preview_text))
+                        live.refresh()
+
         except Exception as e:
             console.print(f"[bold red]Stream error: {e}[/bold red]")
 
-    save_message(state.conn, state.convo_id, "assistant", full_response)
-    console.print("") 
+    if buffer:
+        if is_thinking and state.show_thoughts:
+            full_response_text += buffer
+        elif not is_thinking:
+            full_response_text += buffer
+            clean_response_text += buffer
+
+    save_message(state.conn, state.convo_id, "assistant", clean_response_text.strip())
+    console.print("")
 
 # Commands
 def handle_history():
@@ -585,26 +669,55 @@ def handle_job(args):
         console.print(f"[red]Unknown job command: '{cmd}'.[/red]")
         console.print("[dim]Did you mean ':job set summary 1'?[/dim]")
 
-def handle_model(args, session):
+def handle_cot(args):
     """
-    Allow for models to be managed (listed, selected, added) inside the terminal. 
+    Toggle CoT display.
     """
     if not args:
-        console.print("[red]Usage: :model <list | select | add>[/red]")
+        status = "ON" if state.show_thoughts else "OFF"
+        color = "green" if state.show_thoughts else "red"
+        console.print(f"CoT Display is currently: [{color}]{status}[/{color}]")
+        return
+    
+    mode = args[0].lower()
+    if mode in ['true', 'on', 'yes', '1']:
+        state.show_thoughts = True
+        console.print("[green]CoT Display: ON[/green] (Thoughts will be shown but not saved)")
+    elif mode in ['false', 'off', 'no', '0']:
+        state.show_thoughts = False
+        console.print("[red]CoT Display: OFF[/red] (Thoughts will be hidden)")
+    else:
+        console.print("[red]Usage: :cot <on|off>[/red]")
+
+def handle_model(args, session):
+    """
+    Allow for models to be managed (listed, selected, added, edited) inside the terminal. 
+    """
+    if not args:
+        console.print("[red]Usage: :model <list | select | add | edit>[/red]")
         return
     command = args[0].lower()
     conn = state.conn
 
     if command == 'list':
-        models = conn.execute("SELECT id, short_name, repo_id, filename, context_window, is_active FROM models").fetchall()
+        models = conn.execute("SELECT id, short_name, repo_id, filename, context_window, thought_start, thought_end, is_active FROM models").fetchall()
         table = Table(title="Available Models")
         table.add_column("ID", style="cyan", no_wrap=True)
         table.add_column("Short Name", style="yellow")
         table.add_column("Context", style="magenta")
+        table.add_column("CoT Tags", style="dim")
         table.add_column("Status", style="green")
+        
         for m in models:
             status = "[bold green]ACTIVE[/bold green]" if m['is_active'] else "[dim]inactive[/dim]"
-            table.add_row(str(m['id']), m['short_name'], str(m['context_window']), status)
+            
+            cot_display = "None"
+            if m['thought_start'] and m['thought_end']:
+                cot_display = f"{m['thought_start']}...{m['thought_end']}"
+            elif m['thought_start']:
+                cot_display = f"{m['thought_start']}..."
+                
+            table.add_row(str(m['id']), m['short_name'], str(m['context_window']), cot_display, status)
         console.print(table)
     
     elif command == 'select':
@@ -636,10 +749,21 @@ def handle_model(args, session):
             filename = session.prompt("3. GGUF filename (e.g. 'Phi-3-mini-4k-instruct-q4.gguf'): ").strip()
             ctx_input = session.prompt("4. Context window (default 4096): ").strip()
             ctx = int(ctx_input) if ctx_input.isdigit() else 4096
+            
+            console.print("[dim]Optional: Enter start/end tags for Chain-of-Thought (e.g. <think>). Press Enter to skip.[/dim]")
+            t_start = session.prompt("5. Thought Start Tag: ").strip() or None
+            t_end = session.prompt("6. Thought End Tag: ").strip() or None
+
             console.print(f"\n[bold]Summary:[/bold]\nName: {name}\nRepo: {repo}\nFile: {filename}\nCtx:  {ctx}")
+            if t_start: console.print(f"CoT:  {t_start} ... {t_end}")
+            
             confirm = session.prompt("Save this model? (y/n): ").lower()
             if confirm == 'y':
-                conn.execute("INSERT INTO models (short_name, repo_id, filename, context_window, is_active) VALUES (?, ?, ?, ?, 0)", (name, repo, filename, ctx))
+                conn.execute("""
+                    INSERT INTO models 
+                    (short_name, repo_id, filename, context_window, thought_start, thought_end, is_active) 
+                    VALUES (?, ?, ?, ?, ?, ?, 0)
+                """, (name, repo, filename, ctx, t_start, t_end))
                 conn.commit()
                 console.print(f"[bold green]Model '{name}' added![/bold green]")
             else:
@@ -647,6 +771,74 @@ def handle_model(args, session):
         except KeyboardInterrupt:
             console.print("\n[red]Cancelled.[/red]")
             return
+
+    elif command == 'edit':
+        if len(args) < 2:
+            console.print("[red]Usage: :model edit <ID>[/red]")
+            return
+        
+        try:
+            model_id = int(args[1])
+            curr = conn.execute("SELECT * FROM models WHERE id = ?", (model_id,)).fetchone()
+            if not curr:
+                console.print(f"[red]Model ID {model_id} not found.[/red]")
+                return
+            
+            console.print(Panel(f"[bold yellow]Editing Model: {curr['short_name']}[/bold yellow]\n[dim]Press Enter to keep current value.\nType 'CLEAR' to remove a tag.[/dim]", border_style="yellow"))
+
+            def prompt_edit(label, current_val, allow_clear=False):
+                current_disp = current_val if current_val is not None else "None"
+                val = session.prompt(f"{label} [{current_disp}]: ").strip()
+                if val == "":
+                    return current_val
+                if allow_clear and val.upper() == "CLEAR":
+                    return None
+                return val
+
+            while True:
+                new_name = prompt_edit("1. Short Name", curr['short_name'])
+                if new_name != curr['short_name']:
+                    if conn.execute("SELECT 1 FROM models WHERE short_name = ?", (new_name,)).fetchone():
+                        console.print(f"[red]Name '{new_name}' already exists. Pick another.[/red]")
+                        continue
+                break
+
+            new_repo = prompt_edit("2. Repo ID", curr['repo_id'])
+            new_file = prompt_edit("3. Filename", curr['filename'])
+            
+            new_ctx_str = prompt_edit("4. Context Window", str(curr['context_window']))
+            new_ctx = int(new_ctx_str) if new_ctx_str.isdigit() else curr['context_window']
+            
+            new_t_start = prompt_edit("5. Thought Start Tag", curr['thought_start'], allow_clear=True)
+            new_t_end = prompt_edit("6. Thought End Tag", curr['thought_end'], allow_clear=True)
+            
+            console.print(f"\n[bold]Review Changes:[/bold]")
+            console.print(f"Name: {curr['short_name']} -> [cyan]{new_name}[/cyan]")
+            console.print(f"Repo: {curr['repo_id']} -> [cyan]{new_repo}[/cyan]")
+            console.print(f"File: {curr['filename']} -> [cyan]{new_file}[/cyan]")
+            console.print(f"Ctx:  {curr['context_window']} -> [cyan]{new_ctx}[/cyan]")
+            console.print(f"CoT:  {new_t_start} ... {new_t_end}")
+            
+            confirm = session.prompt("Apply changes? (y/n): ").lower()
+            if confirm == 'y':
+                conn.execute("""
+                    UPDATE models 
+                    SET short_name=?, repo_id=?, filename=?, context_window=?, thought_start=?, thought_end=?
+                    WHERE id=?
+                """, (new_name, new_repo, new_file, new_ctx, new_t_start, new_t_end, model_id))
+                conn.commit()
+                console.print("[bold green]Model updated successfully.[/bold green]")
+                
+                if curr['is_active']:
+                    console.print("[yellow]Note: You edited the active model. Reboot or re-select to apply changes.[/yellow]")
+            else:
+                console.print("[yellow]Edit cancelled.[/yellow]")
+
+        except ValueError:
+            console.print("[red]ID must be a number.[/red]")
+        except KeyboardInterrupt:
+            console.print("\n[red]Cancelled.[/red]")
+
     else:
         console.print(f"[red]Unknown model command: {command}[/red]")
 
@@ -663,8 +855,9 @@ def handle_help():
     :load <file>        - Load a text/md file as context
     :summary            - Save a summary of this chat to Downloads
     :search <term>      - Search conversations
-    :model <cmd>        - Manage active models (list, select, add)
+    :model <cmd>        - Manage active models (list, select, add, edit)
     :job <cmd>          - Assign tasks to models (list, set summary, set title)
+    :cot <on/off>       - Toggle display of reasoning/thoughts
     :quit               - Exit Knot
     """
     console.print(Panel(help_text, title="Help", border_style="white"))
@@ -698,6 +891,7 @@ def main():
                 elif cmd == "search": handle_search(args)
                 elif cmd == "model": handle_model(args, session)
                 elif cmd == "job": handle_job(args)
+                elif cmd == "cot": handle_cot(args)
                 else: console.print(f"[red]Unknown command: {cmd}[/red]")
             else:
                 stream_llm_response(user_input)
