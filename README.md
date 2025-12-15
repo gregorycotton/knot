@@ -70,7 +70,7 @@ pip install rich prompt_toolkit huggingface_hub
 #### 4. Use the thing
 WIP still so lots for me to fix but can be played around with now.
 
-**Note**: By default Phi 3 mini will be downloaded upon running. ~sub-2.5GB in size. This can be changed by altering the code yourself though (crtl+f in `knot.py` for "No model found" (should be around line 160)).
+**Note**: By default you will have Phi 3 mini ready to be downloaded upon running for the first time. ~sub-2.5GB in size, but you can enter details to load a different model.
 
 Run the server in the background and the client in the foreground:
 ```bash
@@ -122,6 +122,7 @@ Type normally to chat or start a line with `:` to enter a command. Quick overvie
 | `:job <cmd>`      | Assign tasks to models (list, set summary, set title)                              |
 | `:model <cmd>`    | Manage active / downloaded models (add, select, list)                              |
 | `:quit`           | Exit Knot                                                                          |
+| `:cot <on/off>`   | Toggle display of reasoning/thoughts                                               |
 | `:help`           | View possible commands                                                             |
 
 To set a model's job using the `:job` command, use `:job set <task> <model_ID>`. Currently, the two tasks available for designating models to are `summary` (ie. the `:summary` command) and `title` (ie. generating a title for the conversation). For example:
@@ -136,7 +137,7 @@ To set a model's job using the `:job` command, use `:job set <task> <model_ID>`.
 
 #### Known errors
 * `:summary` command sometimes doesn't work well for GPT OSS converations due to CoT.
-* Height gets fixed/standard terminal scrolling gets locked on some long answers.
+* Height gets fixed/standard terminal scrolling gets locked on some long answers. Think this is a limitation of Rich, need to look into it.
 
 <br>
 
@@ -144,3 +145,4 @@ To set a model's job using the `:job` command, use `:job set <task> <model_ID>`.
 * Add ability to "branch" a new conversation from any previous message.
 * Need to explore most expedient way to display maths/proofs, etc.
 * Explore possibility of web search and/or search over local documents.
+* Set path for accessing models, DB, summary export, etc. in app.
