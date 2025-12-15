@@ -135,8 +135,8 @@ To set a model's job using the `:job` command, use `:job set <task> <model_ID>`.
 ## TODO:
 
 #### Known errors
-* CoT models title gen includes CoT tokens/generally is no good (low-priority as ability to set a model job to title gen exists)
 * `:summary` command sometimes doesn't work well for GPT OSS converations due to CoT.
+* Height gets fixed/standard terminal scrolling gets locked on some long answers.
 
 <br>
 
@@ -144,5 +144,3 @@ To set a model's job using the `:job` command, use `:job set <task> <model_ID>`.
 * Add ability to "branch" a new conversation from any previous message.
 * Need to explore most expedient way to display maths/proofs, etc.
 * Explore possibility of web search and/or search over local documents.
-* Hide 'thinking' from models by default with optional command to expose/toggle CoT tokens.
-* CoT tokens being saved to DB means they eat up context windows.
