@@ -578,18 +578,13 @@ def handle_summary():
 
 def handle_search(args):
     """
-    Search conversation history OR local files.
-    Usage: 
-      :search <query>          (Default: searches conversations)
-      :search convo <query>    (Explicit: searches conversations)
-      :search device <query>   (Searches Desktop/Docs/Downloads filenames)
+    Search conversation history OR local files. Search convos by default, if not specified.
     """
     if not args:
         console.print("[red]Usage: :search [convo|device] <keyword>[/red]")
         return
 
-    # 1. Determine Mode
-    mode = "convo" # Default
+    mode = "convo"
     query_parts = args
     
     if args[0].lower() in ['convo', 'device']:
@@ -602,12 +597,11 @@ def handle_search(args):
         console.print("[red]Please provide a search keyword.[/red]")
         return
 
-    # --- MODE: CONVERSATION SEARCH ---
+    # Search convo history
     if mode == "convo":
         unique_convo_ids = set()
         try:
             conn = state.conn
-            # Using FTS5 match
             search_results = conn.execute(
                 """
                 SELECT mfts.conversation_id AS convo_id, c.title AS title, COUNT(mfts.conversation_id) AS occurrences
@@ -640,37 +634,34 @@ def handle_search(args):
         except Exception as e:
             console.print(f"[bold red]Database Search Error: {e}[/bold red]")
 
-    # --- MODE: DEVICE SEARCH ---
+    # Search device
     elif mode == "device":
         console.print(f"[yellow]Searching user documents for filename containing '{search_query}'...[/yellow]")
         
         matches = []
         home = Path.home()
-        # We limit search to likely places to avoid scanning the whole OS (slow/permissions)
+        # Limit locations for now
         search_roots = [
             home / "Desktop",
             home / "Documents",
             home / "Downloads",
-            Path(".") # Current knot directory
+            Path(".")
         ]
         
-        limit = 20 # Limit results to prevent spamming
+        limit = 20 # Limit results for now
         count = 0
 
         for root in search_roots:
             if not root.exists(): continue
             
-            # Recursive glob (case insensitive approximation)
             try:
-                # We search for *query*
                 for path in root.rglob(f"*{search_query}*"):
-                    # Exclude hidden files/dirs and non-files
                     if path.is_file() and not path.name.startswith('.'):
                         matches.append(path)
                         count += 1
                         if count >= limit: break
             except PermissionError:
-                continue # Skip folders we can't read
+                continue
             if count >= limit: break
         
         if not matches:
@@ -683,7 +674,6 @@ def handle_search(args):
         table.add_column("Size", style="magenta")
 
         for p in matches:
-            # Calculate human readable size
             try:
                 size_bytes = p.stat().st_size
                 if size_bytes < 1024: size_str = f"{size_bytes} B"
@@ -692,7 +682,6 @@ def handle_search(args):
             except:
                 size_str = "?"
 
-            # Show relative path if possible, else absolute
             try:
                 display_path = str(p.relative_to(home))
                 display_path = f"~/{display_path}"
