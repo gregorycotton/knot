@@ -365,7 +365,7 @@ def stream_llm_response(user_input):
 
     if not response: return
 
-    with Live(Markdown(""), refresh_per_second=12, auto_refresh=False) as live:
+    with Live(Markdown(""), refresh_per_second=10, auto_refresh=False, vertical_overflow="visible") as live: # vertical_overflow="visible"
         try:
             while True:
                 chunk = response.read(1024)
