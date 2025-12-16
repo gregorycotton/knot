@@ -368,7 +368,7 @@ def stream_llm_response(user_input):
     with Live(Markdown(""), refresh_per_second=10, auto_refresh=False, vertical_overflow="visible") as live: # vertical_overflow="visible"
         try:
             while True:
-                chunk = response.read(1024)
+                chunk = response.read(124) # 8 
                 if not chunk: break
                 text_chunk = chunk.decode('utf-8', errors='replace')
 
