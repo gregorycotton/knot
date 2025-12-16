@@ -581,13 +581,13 @@ def handle_search(args):
     Search conversation history OR local files. Search convos by default, if not specified.
     """
     if not args:
-        console.print("[red]Usage: :search [convo|device] <keyword>[/red]")
+        console.print("[red]Usage: :search [h|d] <keyword>[/red]")
         return
 
-    mode = "convo"
+    mode = "h"
     query_parts = args
     
-    if args[0].lower() in ['convo', 'device']:
+    if args[0].lower() in ['h', 'd']:
         mode = args[0].lower()
         query_parts = args[1:]
     
@@ -598,7 +598,7 @@ def handle_search(args):
         return
 
     # Search convo history
-    if mode == "convo":
+    if mode == "h":
         unique_convo_ids = set()
         try:
             conn = state.conn
@@ -635,7 +635,7 @@ def handle_search(args):
             console.print(f"[bold red]Database Search Error: {e}[/bold red]")
 
     # Search device
-    elif mode == "device":
+    elif mode == "d":
         console.print(f"[yellow]Searching user documents for filename containing '{search_query}'...[/yellow]")
         
         matches = []
@@ -926,17 +926,17 @@ def handle_help():
     """
     help_text = """
     [bold]Commands:[/bold]
-    :new                - Start a new conversation
-    :history            - List past conversations
-    :open <id>          - Open a conversation by its partial ID
-    :delete <id>        - Delete a conversation by its partial ID
-    :load <file>        - Load a text/md file as context
-    :summary            - Save a summary of this chat to Downloads
-    :search <db> <term> - Search conversations <convo> or device <device> (WIP)
-    :model <cmd>        - Manage active models (list, select, add, edit)
-    :job <cmd>          - Assign tasks to models (list, set summary, set title)
-    :cot <on/off>       - Toggle display of reasoning/thoughts
-    :quit               - Exit Knot
+    :new                 - Start a new conversation
+    :history             - List past conversations
+    :open <id>           - Open a conversation by its partial ID
+    :delete <id>         - Delete a conversation by its partial ID
+    :load <file>         - Load a text/md file as context
+    :summary             - Save a summary of this chat to Downloads
+    :search <h/d> <term> - Search conversation history (h) or device (d)
+    :model <cmd>         - Manage active models (list, select, add, edit)
+    :job <cmd>           - Assign tasks to models (list, set summary, set title)
+    :cot <on/off>        - Toggle display of reasoning/thoughts
+    :quit                - Exit Knot
     """
     console.print(Panel(help_text, title="Help", border_style="white"))
 
