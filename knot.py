@@ -578,42 +578,131 @@ def handle_summary():
 
 def handle_search(args):
     """
-    Search conversation history for exact matches, or partial matches (*).
+    Search conversation history OR local files.
+    Usage: 
+      :search <query>          (Default: searches conversations)
+      :search convo <query>    (Explicit: searches conversations)
+      :search device <query>   (Searches Desktop/Docs/Downloads filenames)
     """
     if not args:
-        console.print("[red]Usage: :search <keyword or phrase>[/red]")
+        console.print("[red]Usage: :search [convo|device] <keyword>[/red]")
         return
-    search_query = " ".join(args)
-    unique_convo_ids = set()
-    try:
-        conn = state.conn
-        search_results = conn.execute(
-            """
-            SELECT mfts.conversation_id AS convo_id, c.title AS title, COUNT(mfts.conversation_id) AS occurrences
-            FROM messages_fts mfts
-            JOIN conversations c ON c.id = mfts.conversation_id
-            WHERE mfts.content MATCH ?
-            GROUP BY mfts.conversation_id
-            ORDER BY occurrences DESC
-            """, (search_query,)
-        ).fetchall()
 
-        if not search_results:
-            console.print(f"[yellow]No results found for '{search_query}'.[/yellow]")
+    # 1. Determine Mode
+    mode = "convo" # Default
+    query_parts = args
+    
+    if args[0].lower() in ['convo', 'device']:
+        mode = args[0].lower()
+        query_parts = args[1:]
+    
+    search_query = " ".join(query_parts).strip()
+    
+    if not search_query:
+        console.print("[red]Please provide a search keyword.[/red]")
+        return
+
+    # --- MODE: CONVERSATION SEARCH ---
+    if mode == "convo":
+        unique_convo_ids = set()
+        try:
+            conn = state.conn
+            # Using FTS5 match
+            search_results = conn.execute(
+                """
+                SELECT mfts.conversation_id AS convo_id, c.title AS title, COUNT(mfts.conversation_id) AS occurrences
+                FROM messages_fts mfts
+                JOIN conversations c ON c.id = mfts.conversation_id
+                WHERE mfts.content MATCH ?
+                GROUP BY mfts.conversation_id
+                ORDER BY occurrences DESC
+                """, (search_query,)
+            ).fetchall()
+
+            if not search_results:
+                console.print(f"[yellow]No conversations found containing '{search_query}'.[/yellow]")
+                return
+
+            table = Table(title=f"Conversation Results: '{search_query}'")
+            table.add_column("ID", style="cyan", no_wrap=True) 
+            table.add_column("Title", style="green")
+            table.add_column("Matches", style="magenta")
+
+            for row in search_results:
+                table.add_row(row['convo_id'][:8], row['title'], str(row['occurrences']))
+                unique_convo_ids.add(row['convo_id'])
+            
+            console.print(table)
+            console.print(f"[italic]Found {len(unique_convo_ids)} conversation(s).[/italic]")
+        
+        except sqlite3.OperationalError:
+            console.print(f"[red]Search syntax error. Try simple keywords.[/red]")
+        except Exception as e:
+            console.print(f"[bold red]Database Search Error: {e}[/bold red]")
+
+    # --- MODE: DEVICE SEARCH ---
+    elif mode == "device":
+        console.print(f"[yellow]Searching user documents for filename containing '{search_query}'...[/yellow]")
+        
+        matches = []
+        home = Path.home()
+        # We limit search to likely places to avoid scanning the whole OS (slow/permissions)
+        search_roots = [
+            home / "Desktop",
+            home / "Documents",
+            home / "Downloads",
+            Path(".") # Current knot directory
+        ]
+        
+        limit = 20 # Limit results to prevent spamming
+        count = 0
+
+        for root in search_roots:
+            if not root.exists(): continue
+            
+            # Recursive glob (case insensitive approximation)
+            try:
+                # We search for *query*
+                for path in root.rglob(f"*{search_query}*"):
+                    # Exclude hidden files/dirs and non-files
+                    if path.is_file() and not path.name.startswith('.'):
+                        matches.append(path)
+                        count += 1
+                        if count >= limit: break
+            except PermissionError:
+                continue # Skip folders we can't read
+            if count >= limit: break
+        
+        if not matches:
+            console.print(f"[yellow]No files found matching '{search_query}'.[/yellow]")
             return
 
-        table = Table(title=f"Search Results for '{search_query}'")
-        table.add_column("ID", style="cyan", no_wrap=True) 
-        table.add_column("Title", style="green")
-        table.add_column("Occurrences", style="magenta")
+        table = Table(title=f"Device File Results: '{search_query}'")
+        table.add_column("Filename", style="green")
+        table.add_column("Path", style="dim cyan")
+        table.add_column("Size", style="magenta")
 
-        for row in search_results:
-            table.add_row(row['convo_id'][:8], row['title'], str(row['occurrences']))
-            unique_convo_ids.add(row['convo_id'])
+        for p in matches:
+            # Calculate human readable size
+            try:
+                size_bytes = p.stat().st_size
+                if size_bytes < 1024: size_str = f"{size_bytes} B"
+                elif size_bytes < 1024**2: size_str = f"{size_bytes/1024:.1f} KB"
+                else: size_str = f"{size_bytes/1024**2:.1f} MB"
+            except:
+                size_str = "?"
+
+            # Show relative path if possible, else absolute
+            try:
+                display_path = str(p.relative_to(home))
+                display_path = f"~/{display_path}"
+            except ValueError:
+                display_path = str(p)
+
+            table.add_row(p.name, display_path, size_str)
+
         console.print(table)
-        console.print(f"[italic]Found {len(unique_convo_ids)} conversation(s).[/italic]")
-    except sqlite3.Error as e:
-        console.print(f"[bold red]Database Search Error: {e}[/bold red]")
+        console.print("[italic]To load a file as context, type:[/italic] [bold]:load <full_path>[/bold]")
 
 def handle_job(args):
     """
@@ -854,7 +943,7 @@ def handle_help():
     :delete <id>        - Delete a conversation by its partial ID
     :load <file>        - Load a text/md file as context
     :summary            - Save a summary of this chat to Downloads
-    :search <term>      - Search conversations
+    :search <db> <term> - Search conversations <convo> or device <device> (WIP)
     :model <cmd>        - Manage active models (list, select, add, edit)
     :job <cmd>          - Assign tasks to models (list, set summary, set title)
     :cot <on/off>       - Toggle display of reasoning/thoughts
