@@ -110,20 +110,20 @@ Make this executable and alias it to `knot` in your shell config.
 ## Comand reference
 Type normally to chat or start a line with `:` to enter a command. Quick overview:
 
-| Command               |  Action                                                                             |
-|------------------------|------------------------------------------------------------------------------------|
-| `:new`                 | Start a new conversation and clear the current context                             |
-| `:history`             | List past conversations                                                            |
-| `:open <id>`           | Open a conversation by its partial ID                                              |
-| `:delete <id>`         | Delete a conversation permenantly                                                  |
-| `:load <file>`         | Load a text/md file as context                                                     |
-| `:summary`             | Save a summary of this chat to Downloads                                           |
-| `:search <h/c> <term>` | Search conversation history (h) or device (d) (WIP)                                |
-| `:job <cmd>`           | Assign tasks to models (list, set summary, set title)                              |
-| `:model <cmd>`         | Manage active / downloaded models (add, select, list)                              |
-| `:quit`                | Exit Knot                                                                          |
-| `:cot <on/off>`        | Toggle display of reasoning/thoughts                                               |
-| `:help`                | View possible commands                                                             |
+| Command                  |  Action                                                                            |
+|--------------------------|------------------------------------------------------------------------------------|
+| `:new`                   | Start a new conversation and clear the current context                             |
+| `:history`               | List past conversations                                                            |
+| `:open <id>`             | Open a conversation by its partial ID                                              |
+| `:delete <id>`           | Delete a conversation permenantly                                                  |
+| `:load <file>`           | Load a text/md file as context                                                     |
+| `:summary`               | Save a summary of this chat to Downloads                                           |
+| `:search <h/d/w> <term>` | Search conversation history (h), device (d), or web (w)                            |
+| `:job <cmd>`             | Assign tasks to models (list, set summary, set title)                              |
+| `:model <cmd>`           | Manage active / downloaded models (add, select, list)                              |
+| `:quit`                  | Exit Knot                                                                          |
+| `:cot <on/off>`          | Toggle display of reasoning/thoughts                                               |
+| `:help`                  | View possible commands                                                             |
 
 To set a model's job using the `:job` command, use `:job set <task> <model_ID>`. Currently, the two tasks available for designating models to are `summary` (ie. the `:summary` command) and `title` (ie. generating a title for the conversation). For example:
 * `job set title 1` ensures all titles are generated using the model with the ID of `1`.

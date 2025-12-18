@@ -8,6 +8,9 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
+import urllib.parse
+import html
+
 # Download model file locally
 from huggingface_hub import hf_hub_download
 
@@ -578,17 +581,19 @@ def handle_summary():
 
 def handle_search(args):
     """
-    Search conversation history OR local files. Search convos by default, if not specified.
+    Search conversation history (h), device (d), or web (w)
     """
     if not args:
-        console.print("[red]Usage: :search [h|d] <keyword>[/red]")
+        console.print("[red]Usage: :search [h|d|w] <query>[/red]")
         return
 
-    mode = "h"
+    mode = "h" 
     query_parts = args
     
-    if args[0].lower() in ['h', 'd']:
-        mode = args[0].lower()
+    if args[0].lower() in ['h', 'd', 'w', 'convo', 'device', 'web']:
+        short_map = {'convo': 'h', 'device': 'd', 'web': 'w'}
+        raw_mode = args[0].lower()
+        mode = short_map.get(raw_mode, raw_mode)
         query_parts = args[1:]
     
     search_query = " ".join(query_parts).strip()
@@ -597,7 +602,7 @@ def handle_search(args):
         console.print("[red]Please provide a search keyword.[/red]")
         return
 
-    # Search convo history
+    # Search history (h)
     if mode == "h":
         unique_convo_ids = set()
         try:
@@ -614,10 +619,10 @@ def handle_search(args):
             ).fetchall()
 
             if not search_results:
-                console.print(f"[yellow]No conversations found containing '{search_query}'.[/yellow]")
+                console.print(f"[yellow]No conversations found for '{search_query}'.[/yellow]")
                 return
 
-            table = Table(title=f"Conversation Results: '{search_query}'")
+            table = Table(title=f"History Results: '{search_query}'")
             table.add_column("ID", style="cyan", no_wrap=True) 
             table.add_column("Title", style="green")
             table.add_column("Matches", style="magenta")
@@ -627,71 +632,145 @@ def handle_search(args):
                 unique_convo_ids.add(row['convo_id'])
             
             console.print(table)
-            console.print(f"[italic]Found {len(unique_convo_ids)} conversation(s).[/italic]")
-        
+            
         except sqlite3.OperationalError:
             console.print(f"[red]Search syntax error. Try simple keywords.[/red]")
         except Exception as e:
-            console.print(f"[bold red]Database Search Error: {e}[/bold red]")
+            console.print(f"[bold red]DB Error: {e}[/bold red]")
 
-    # Search device
+    # Search device (d)
     elif mode == "d":
-        console.print(f"[yellow]Searching user documents for filename containing '{search_query}'...[/yellow]")
-        
+        console.print(f"[yellow]Scanning user docs for '{search_query}'...[/yellow]")
         matches = []
         home = Path.home()
-        # Limit locations for now
-        search_roots = [
-            home / "Desktop",
-            home / "Documents",
-            home / "Downloads",
-            Path(".")
-        ]
+        search_roots = [home / "Desktop", home / "Documents", home / "Downloads", Path(".")]
         
-        limit = 20 # Limit results for now
-        count = 0
-
+        TEXT_EXTS = {'.txt', '.md', '.py', '.js', '.json', '.html', '.css', '.rs', '.c', '.cpp', '.h'}
+        SKIP_DIRS = {'node_modules', '.git', '__pycache__', 'venv', 'env', 'site-packages', 'target', 'build', 'dist', 'Library', 'AppData'}
+        MAX_MATCHES = 10
+        MAX_SCANNED = 3000
+        
+        count_found = 0
+        count_scanned = 0
+        
         for root in search_roots:
             if not root.exists(): continue
-            
-            try:
-                for path in root.rglob(f"*{search_query}*"):
-                    if path.is_file() and not path.name.startswith('.'):
-                        matches.append(path)
-                        count += 1
-                        if count >= limit: break
-            except PermissionError:
-                continue
-            if count >= limit: break
-        
+            for parent, dirs, files in os.walk(root):
+                dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith('.')]
+                for filename in files:
+                    if filename.startswith('.'): continue
+                    
+                    count_scanned += 1
+                    if count_scanned > MAX_SCANNED: break
+                    
+                    p = Path(parent) / filename
+                    match_type = None
+                    snippet = ""
+
+                    if search_query.lower() in filename.lower():
+                        match_type = "Filename"
+                    elif p.suffix.lower() in TEXT_EXTS:
+                        try:
+                            if p.stat().st_size < 1_000_000:
+                                content = p.read_text(encoding='utf-8', errors='ignore')
+                                idx = content.lower().find(search_query.lower())
+                                if idx != -1:
+                                    match_type = "Content"
+                                    s_start = max(0, idx - 15)
+                                    s_end = min(len(content), idx + len(search_query) + 30)
+                                    snippet = "..." + content[s_start:s_end].replace('\n', ' ') + "..."
+                        except: pass
+
+                    if match_type:
+                        matches.append({"name": filename, "path": p, "type": match_type, "snippet": snippet})
+                        count_found += 1
+                        
+                    if count_found >= MAX_MATCHES: break
+                if count_found >= MAX_MATCHES: break
+                if count_scanned > MAX_SCANNED: break
+            if count_found >= MAX_MATCHES: break
+
         if not matches:
-            console.print(f"[yellow]No files found matching '{search_query}'.[/yellow]")
+            console.print(f"[yellow]No files found.[/yellow]")
             return
 
-        table = Table(title=f"Device File Results: '{search_query}'")
-        table.add_column("Filename", style="green")
-        table.add_column("Path", style="dim cyan")
-        table.add_column("Size", style="magenta")
+        table = Table(title=f"Device Results: '{search_query}'")
+        table.add_column("File", style="green", no_wrap=True)
+        table.add_column("Info", style="dim")
+        table.add_column("Path", style="cyan")
 
-        for p in matches:
-            try:
-                size_bytes = p.stat().st_size
-                if size_bytes < 1024: size_str = f"{size_bytes} B"
-                elif size_bytes < 1024**2: size_str = f"{size_bytes/1024:.1f} KB"
-                else: size_str = f"{size_bytes/1024**2:.1f} MB"
-            except:
-                size_str = "?"
-
-            try:
-                display_path = str(p.relative_to(home))
-                display_path = f"~/{display_path}"
-            except ValueError:
-                display_path = str(p)
-
-            table.add_row(p.name, display_path, size_str)
-
+        for m in matches:
+            try: dpath = f"~/{m['path'].relative_to(home)}"
+            except: dpath = str(m['path'])
+            info = f"[bold]{m['type']}[/bold] {m['snippet']}"
+            table.add_row(m['name'], info, dpath)
         console.print(table)
-        console.print("[italic]To load a file as context, type:[/italic] [bold]:load <full_path>[/bold]")
+
+    # Search web (w)
+    elif mode == "w":
+        console.print(f"[yellow]Searching DuckDuckGo for '{search_query}'...[/yellow]")
+        
+        try:
+            url = "https://html.duckduckgo.com/html/"
+            data = urllib.parse.urlencode({'q': search_query}).encode('utf-8')
+            
+            req = urllib.request.Request(url, data=data)
+            # Fake a browser, so DDG doesn't block the script
+            req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+            
+            with urllib.request.urlopen(req) as resp:
+                html_content = resp.read().decode('utf-8')
+
+            link_pattern = re.compile(r'<a[^>]+class="result__a"[^>]*>(.*?)</a>', re.IGNORECASE)
+            href_pattern = re.compile(r'href="([^"]+)"')
+            
+            results = []
+            
+            for match in link_pattern.finditer(html_content):
+                title_html = match.group(1)
+                full_tag = match.group(0) 
+                
+                href_match = href_pattern.search(full_tag)
+                if not href_match: continue
+                
+                raw_href = href_match.group(1)
+                
+                title = re.sub(r'<[^>]+>', '', title_html).strip()
+                title = html.unescape(title)
+                
+                if "uddg=" in raw_href:
+                    try:
+                        qs = urllib.parse.parse_qs(urllib.parse.urlparse(raw_href).query)
+                        real_url = qs.get('uddg', [None])[0]
+                    except:
+                        real_url = raw_href
+                else:
+                    real_url = raw_href
+
+                if real_url and title:
+                    results.append({"title": title, "url": real_url})
+                
+                if len(results) >= 5: break
+            
+            if not results:
+                if "robots" in html_content.lower() or "too many requests" in html_content.lower():
+                    console.print("[red]DuckDuckGo is rate-limiting this IP. Try again in a minute.[/red]")
+                else:
+                    console.print("[red]No results found (HTML structure might have changed).[/red]")
+                return
+
+            table = Table(title=f"Web Results: '{search_query}'", show_header=False)
+            
+            for r in results:
+                table.add_row(
+                    f"[bold blue]{r['title']}[/bold blue]\n[dim]{r['url']}[/dim]"
+                )
+                table.add_section()
+                
+            console.print(table)
+            
+        except Exception as e:
+            console.print(f"[bold red]Web Search Failed: {e}[/bold red]")
 
 def handle_job(args):
     """
@@ -926,17 +1005,17 @@ def handle_help():
     """
     help_text = """
     [bold]Commands:[/bold]
-    :new                 - Start a new conversation
-    :history             - List past conversations
-    :open <id>           - Open a conversation by its partial ID
-    :delete <id>         - Delete a conversation by its partial ID
-    :load <file>         - Load a text/md file as context
-    :summary             - Save a summary of this chat to Downloads
-    :search <h/d> <term> - Search conversation history (h) or device (d)
-    :model <cmd>         - Manage active models (list, select, add, edit)
-    :job <cmd>           - Assign tasks to models (list, set summary, set title)
-    :cot <on/off>        - Toggle display of reasoning/thoughts
-    :quit                - Exit Knot
+    :new                    - Start a new conversation
+    :history                - List past conversations
+    :open <id>              - Open a conversation by its partial ID
+    :delete <id>            - Delete a conversation by its partial ID
+    :load <file>            - Load a text/md file as context
+    :summary                - Save a summary of this chat to Downloads
+    :search <h/d/w> <term>  - Search conversation history (h), device (d), or web (w)
+    :model <cmd>            - Manage active models (list, select, add, edit)
+    :job <cmd>              - Assign tasks to models (list, set summary, set title)
+    :cot <on/off>           - Toggle display of reasoning/thoughts
+    :quit                   - Exit Knot
     """
     console.print(Panel(help_text, title="Help", border_style="white"))
 
