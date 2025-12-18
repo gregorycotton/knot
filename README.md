@@ -118,8 +118,9 @@ Type normally to chat or start a line with `:` to enter a command. Quick overvie
 | `:delete <id>`           | Delete a conversation permenantly                                                  |
 | `:load <file>`           | Load a text/md file as context                                                     |
 | `:summary`               | Save a summary of this chat to Downloads                                           |
-| `:search <h/d/w> <term>` | Search conversation history (h), device (d), or web (w)                            |
-| `:job <cmd>`             | Assign tasks to models (list, set summary, set title)                              |
+| `:search <h/d/w> <term>` | Search conversation history (h), device (d), or web URLs (w)                       |
+| `:ask <question>`        | Web RAG Search                                                                     |
+| `:job <cmd>`             | Assign tasks to models (list, set summary, set title, set ask)                     |
 | `:model <cmd>`           | Manage active / downloaded models (add, select, list)                              |
 | `:quit`                  | Exit Knot                                                                          |
 | `:cot <on/off>`          | Toggle display of reasoning/thoughts                                               |
