@@ -850,7 +850,17 @@ def handle_ask(args):
                         "url": url,
                         "content": "\n...\n".join(top_chunks)
                     })
+    if context_data:
+        table = Table(title="Sources Consulted", show_header=True, header_style="bold magenta")
+        table.add_column("#", style="dim", width=2)
+        table.add_column("Source Title", style="cyan")
+        table.add_column("URL", style="blue")
     
+        for i, data in enumerate(context_data, 1):
+            table.add_row(str(i), data['source'], data['url'])
+    
+        console.print(table)
+
     if not context_data:
         console.print("[yellow]Could not extract readable text from results. Answering from snippets only.[/yellow]")
         rag_context = "Use these search snippets:\n" + "\n".join([f"- {l['snippet']}" for l in links])
