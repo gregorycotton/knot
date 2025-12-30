@@ -298,19 +298,8 @@ def fetch_url_content(url):
     parsed = urlparse(url)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
     robots_url = f"{base_url}/robots.txt"
-    
-    # rp = urllib.robotparser.RobotFileParser()
-    # try:
-    #     rp.set_url(robots_url)
-    #     rp.read()
-    #     if not rp.can_fetch("*", url):
-    #         console.print(f"[dim]Skipping {url} (Blocked by robots.txt)[/dim]")
-    #         return None
-    # except:
-    #     pass
 
     try:
-        # Change this line in fetch_url_content:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'})
         with urllib.request.urlopen(req, timeout=5) as response:
             raw_html = response.read().decode('utf-8', errors='ignore')
