@@ -137,13 +137,12 @@ To set a model's job using the `:job` command, use `:job set <task> <model_ID>`.
 ## TODO:
 
 #### Known errors
-* `:summary` command sometimes doesn't work well for GPT OSS converations due to CoT.
-* Height gets fixed/standard terminal scrolling gets locked on some long answers. Think this is a limitation of Rich, need to look into it.
+* `:summary` command sometimes doesn't work well when model assigned to summary job is CoT model.
+* Height gets fixed/standard terminal scrolling gets locked on some long answers.
 
 <br>
 
 #### Future improvements
 * Add ability to "branch" a new conversation from any previous message.
 * Need to explore most expedient way to display maths/proofs, etc.
-* Explore possibility of web search and/or search over local documents.
 * Set path for accessing models, DB, summary export, etc. in app.
