@@ -44,6 +44,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
+            parent_convo_id TEXT,
+            forked_msg_id TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
                        
@@ -93,34 +95,195 @@ def init_db():
                 new.conversation_id
             );
         END;
+
+        CREATE INDEX IF NOT EXISTS idx_messages_convo_time
+            ON messages (conversation_id, timestamp);
+
     """);
+
+    # Lightweight migration for databases created before branching fields existed.
+    convo_cols = {col["name"] for col in conn.execute("PRAGMA table_info(conversations)").fetchall()}
+    if "parent_convo_id" not in convo_cols:
+        conn.execute("ALTER TABLE conversations ADD COLUMN parent_convo_id TEXT")
+    if "forked_msg_id" not in convo_cols:
+        conn.execute("ALTER TABLE conversations ADD COLUMN forked_msg_id TEXT")
+
+    # Create branch index only after migration columns exist.
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_conversations_parent
+            ON conversations (parent_convo_id)
+    """)
 
     conn.commit()
     return conn
 
 # DB helpers
 # ---
-def create_conversation(conn, title):
+def create_conversation(conn, title, parent_convo_id=None, forked_msg_id=None):
     convo_id = str(uuid.uuid4())
-    conn.execute("INSERT INTO conversations (id, title) VALUES (?, ?)", (convo_id, title))
+    conn.execute(
+        "INSERT INTO conversations (id, title, parent_convo_id, forked_msg_id) VALUES (?, ?, ?, ?)",
+        (convo_id, title, parent_convo_id, forked_msg_id)
+    )
     conn.commit()
     return convo_id
 
 def delete_conversation_by_id(conn, convo_id):
+    # Keep branches alive if a parent conversation is removed.
+    conn.execute(
+        "UPDATE conversations SET parent_convo_id = NULL, forked_msg_id = NULL WHERE parent_convo_id = ?",
+        (convo_id,)
+    )
     conn.execute("DELETE FROM conversations WHERE id = ?", (convo_id,))
     conn.commit()
 
-def save_message(conn, convo_id, role, content):
+def save_message(conn, convo_id, role, content, timestamp=None):
     msg_id = str(uuid.uuid4())
-    conn.execute("INSERT INTO messages (id, conversation_id, role, content) VALUES (?, ?, ?, ?)", (msg_id, convo_id, role, content))
+    if timestamp is None:
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content) VALUES (?, ?, ?, ?)",
+            (msg_id, convo_id, role, content)
+        )
+    else:
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)",
+            (msg_id, convo_id, role, content, timestamp)
+        )
     conn.commit()
+    return msg_id
 
 def get_history(conn, convo_id):
-    rows = conn.execute("SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC", (convo_id,)).fetchall()
-    return [{"role": r["role"], "content": r["content"]} for r in rows]
+    rows = conn.execute(
+        """
+        SELECT id, role, content, timestamp
+        FROM messages
+        WHERE conversation_id = ?
+        ORDER BY timestamp ASC, rowid ASC
+        """,
+        (convo_id,)
+    ).fetchall()
+    return [
+        {"id": r["id"], "role": r["role"], "content": r["content"], "timestamp": r["timestamp"]}
+        for r in rows
+    ]
 
 def list_conversations(conn):
-    return conn.execute("SELECT id, title, created_at FROM conversations ORDER BY created_at DESC").fetchall()
+    return conn.execute(
+        """
+        SELECT id, title, created_at, parent_convo_id, forked_msg_id
+        FROM conversations
+        ORDER BY created_at DESC
+        """
+    ).fetchall()
+
+def get_conversation(conn, convo_id):
+    return conn.execute("SELECT * FROM conversations WHERE id = ?", (convo_id,)).fetchone()
+
+def get_latest_message_for_conversation(conn, convo_id):
+    return conn.execute(
+        """
+        SELECT
+            m.id,
+            m.conversation_id,
+            m.timestamp,
+            m.rowid AS row_id,
+            c.title AS conversation_title
+        FROM messages m
+        JOIN conversations c ON c.id = m.conversation_id
+        WHERE m.conversation_id = ?
+        ORDER BY m.timestamp DESC, m.rowid DESC
+        LIMIT 1
+        """,
+        (convo_id,)
+    ).fetchone()
+
+def get_parent_messages_up_to_fork(conn, parent_convo_id, target_timestamp, target_row_id):
+    return conn.execute(
+        """
+        SELECT role, content, timestamp
+        FROM messages
+        WHERE conversation_id = ?
+          AND (timestamp < ? OR (timestamp = ? AND rowid <= ?))
+        ORDER BY timestamp ASC, rowid ASC
+        """,
+        (parent_convo_id, target_timestamp, target_timestamp, target_row_id)
+    ).fetchall()
+
+def create_branch_from_message(conn, target_message):
+    parent_convo_id = target_message["conversation_id"]
+    parent_title = target_message["conversation_title"]
+    target_msg_id = target_message["id"]
+    target_timestamp = target_message["timestamp"]
+    target_row_id = target_message["row_id"]
+
+    parent_history = get_parent_messages_up_to_fork(conn, parent_convo_id, target_timestamp, target_row_id)
+    if not parent_history:
+        return None
+
+    child_convo_id = str(uuid.uuid4())
+    child_title = f"{parent_title} (Branch)"
+
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO conversations (id, title, parent_convo_id, forked_msg_id)
+            VALUES (?, ?, ?, ?)
+            """,
+            (child_convo_id, child_title, parent_convo_id, target_msg_id)
+        )
+        for msg in parent_history:
+            conn.execute(
+                """
+                INSERT INTO messages (id, conversation_id, role, content, timestamp)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (str(uuid.uuid4()), child_convo_id, msg["role"], msg["content"], msg["timestamp"])
+            )
+
+    return {
+        "child_convo_id": child_convo_id,
+        "child_title": child_title,
+        "parent_title": parent_title
+    }
+
+def maybe_rename_new_branch(conn, convo_id, first_user_message):
+    convo = get_conversation(conn, convo_id)
+    if not convo:
+        return
+    if not convo["parent_convo_id"] or not convo["forked_msg_id"]:
+        return
+    if not convo["title"].endswith("(Branch)"):
+        return
+
+    fork_point = conn.execute(
+        "SELECT timestamp, rowid AS row_id FROM messages WHERE id = ?",
+        (convo["forked_msg_id"],)
+    ).fetchone()
+    if not fork_point:
+        return
+
+    expected_seed_count = conn.execute(
+        """
+        SELECT COUNT(*) FROM messages
+        WHERE conversation_id = ?
+          AND (timestamp < ? OR (timestamp = ? AND rowid <= ?))
+        """,
+        (convo["parent_convo_id"], fork_point["timestamp"], fork_point["timestamp"], fork_point["row_id"])
+    ).fetchone()[0]
+
+    current_count = conn.execute(
+        "SELECT COUNT(*) FROM messages WHERE conversation_id = ?",
+        (convo_id,)
+    ).fetchone()[0]
+
+    if current_count != expected_seed_count:
+        return
+
+    with console.status("[bold yellow]Generating branch title...[/bold yellow]"):
+        new_title = generate_smart_title(first_user_message)
+    conn.execute("UPDATE conversations SET title = ? WHERE id = ?", (new_title, convo_id))
+    conn.commit()
+    console.print(f"[dim]Branch renamed to: {new_title}[/dim]")
 
 def get_active_model_config(conn):
     return conn.execute("SELECT * FROM models WHERE is_active = 1").fetchone()
@@ -170,7 +333,8 @@ class AppState:
         msgs = get_history(self.conn, self.convo_id)
         for msg in msgs:
             role_color = "bold blue" if msg['role'] == 'user' else "bold magenta"
-            console.print(f"\n[{role_color}]{msg['role'].upper()}:[/{role_color}]")
+            short_msg_id = msg["id"][:6]
+            console.print(f"\n[{role_color}][{short_msg_id}] {msg['role'].upper()}:[/{role_color}]")
             console.print(Markdown(msg['content']))
 
 state = AppState()
@@ -474,6 +638,8 @@ def stream_llm_response(user_input):
             new_title = generate_smart_title(user_input)
         state.convo_id = create_conversation(state.conn, new_title)
         console.print(f"[dim]Conversation saved as: {new_title}[/dim]")
+    else:
+        maybe_rename_new_branch(state.conn, state.convo_id, user_input)
 
     save_message(state.conn, state.convo_id, "user", user_input)
     history = get_history(state.conn, state.convo_id)
@@ -607,8 +773,13 @@ def handle_history():
     table.add_column("ID", style="cyan", no_wrap=True)
     table.add_column("Date", style="magenta")
     table.add_column("Title", style="green")
+    table.add_column("Parent", style="dim")
     for c in convos:
-        table.add_row(c["id"][:8], c["created_at"][:16], c["title"])
+        title = c["title"]
+        if c["parent_convo_id"]:
+            title = f"{title} [dim](branch)[/dim]"
+        parent = c["parent_convo_id"][:8] if c["parent_convo_id"] else "-"
+        table.add_row(c["id"][:8], c["created_at"][:16], title, parent)
     console.print(table)
     console.print("[italic]To select, type: :open <first-8-chars-of-id>[/italic]")
 
@@ -645,6 +816,78 @@ def handle_open(args):
             state.set_active_convo(c["id"], c["title"])
             return
     console.print(f"[red]Conversation starting with {target} not found.[/red]")
+
+def handle_branch(args):
+    if state.convo_id is None:
+        console.print("[red]Please start a conversation before branching.[/red]")
+        return
+
+    target_message = get_latest_message_for_conversation(state.conn, state.convo_id)
+    if not target_message:
+        console.print("[red]Please start a conversation before branching.[/red]")
+        return
+
+    branch_prompt = " ".join(args).strip()
+
+    with console.status("[bold yellow]Branching conversation...[/bold yellow]"):
+        branch_result = create_branch_from_message(state.conn, target_message)
+        if not branch_result:
+            console.print("[red]Could not create branch from that message.[/red]")
+            return
+
+    child_convo_id = branch_result["child_convo_id"]
+    child_title = branch_result["child_title"]
+    parent_title = branch_result["parent_title"]
+    state.set_active_convo(child_convo_id, child_title)
+    console.print(
+        Panel(
+            f"[bold green]Branched from {parent_title}.[/bold green]\nYou are now in a new conversation.",
+            border_style="green"
+        )
+    )
+    if branch_prompt:
+        stream_llm_response(branch_prompt)
+
+def handle_lineage():
+    if state.convo_id is None:
+        console.print("[red]No active conversation.[/red]")
+        return
+
+    current = get_conversation(state.conn, state.convo_id)
+    if not current:
+        console.print("[red]Active conversation not found.[/red]")
+        return
+
+    chain = []
+    seen = set()
+    cursor = current
+    while cursor and cursor["id"] not in seen:
+        chain.append(cursor)
+        seen.add(cursor["id"])
+        if cursor["parent_convo_id"]:
+            cursor = get_conversation(state.conn, cursor["parent_convo_id"])
+        else:
+            cursor = None
+
+    chain.reverse()
+
+    table = Table(title="Conversation Lineage")
+    table.add_column("Role", style="cyan")
+    table.add_column("ID", style="magenta")
+    table.add_column("Title", style="green")
+
+    for convo in chain:
+        role = "Current" if convo["id"] == state.convo_id else "Ancestor"
+        table.add_row(role, convo["id"][:8], convo["title"])
+
+    children = state.conn.execute(
+        "SELECT id, title FROM conversations WHERE parent_convo_id = ? ORDER BY created_at ASC",
+        (state.convo_id,)
+    ).fetchall()
+    for child in children:
+        table.add_row("Child", child["id"][:8], child["title"])
+
+    console.print(table)
 
 def handle_load(args):
     if not args:
@@ -1059,6 +1302,8 @@ def handle_help():
     :new                    - Start a new conversation
     :history                - List past conversations
     :open <id>              - Open a conversation by its partial ID
+    :branch [prompt]        - Branch at current point; optional first prompt in branch
+    :lineage                - Show parent/current/child conversation lineage
     :delete <id>            - Delete a conversation by its partial ID
     :load <file>            - Load a text/md file as context
     :summary                - Save a summary of this chat to Downloads
@@ -1094,6 +1339,8 @@ def main():
                 elif cmd == "history": handle_history()
                 elif cmd == "new": state.start_new_chat()
                 elif cmd == "open": handle_open(args)
+                elif cmd == "branch": handle_branch(args)
+                elif cmd == "lineage": handle_lineage()
                 elif cmd == "load": handle_load(args)
                 elif cmd == "delete": handle_delete(args)
                 elif cmd == "summary": handle_summary()

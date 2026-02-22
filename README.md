@@ -115,6 +115,7 @@ Type normally to chat or start a line with `:` to enter a command. Quick overvie
 | `:new`                   | Start a new conversation and clear the current context                             |
 | `:history`               | List past conversations                                                            |
 | `:open <id>`             | Open a conversation by its partial ID                                              |
+| `:branch [prompt]`       | Create a branch from the current point (optionally send first prompt)              |
 | `:delete <id>`           | Delete a conversation permenantly                                                  |
 | `:load <file>`           | Load a text/md file as context                                                     |
 | `:summary`               | Save a summary of this chat to Downloads                                           |
@@ -143,6 +144,5 @@ To set a model's job using the `:job` command, use `:job set <task> <model_ID>`.
 <br>
 
 #### Future improvements
-* Add ability to "branch" a new conversation from any previous message.
 * Need to explore most expedient way to display maths/proofs, etc.
 * Set path for accessing models, DB, summary export, etc. in app.
